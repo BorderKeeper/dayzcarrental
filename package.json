@@ -9,15 +9,18 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "dependencies": {
-    "next": "^13.5.11",
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "next": "15.5.23",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
   },
   "devDependencies": {
-    "@types/node": "20.8.0",
-    "@types/react": "18.2.25",
-    "@types/react-dom": "18.2.10",
-    "typescript": "5.2.2"
+    "@types/node": "20.19.0",
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "typescript": "5.6.3"
   }
 }
