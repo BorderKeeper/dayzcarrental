@@ -10,7 +10,7 @@
 // deterministic and testable.
 
 import type { Member, Vote, Tally, Ballot } from "./types";
-import { GOVERNANCE } from "./config";
+import { GOVERNANCE, effectiveQuorum } from "./config";
 
 // Is a member eligible to have their ballot counted at all?
 export function isEligible(m: Member | undefined): boolean {
@@ -45,7 +45,7 @@ export function tallyVotes(votes: Vote[], members: Map<string, Member>): Tally {
   }
 
   const eligibleBallots = approve + reject; // abstain (🤷) does not count toward quorum
-  const quorumMet = eligibleBallots >= GOVERNANCE.quorumMinBallots;
+  const quorumMet = eligibleBallots >= effectiveQuorum();
   const approvalRatio = eligibleBallots === 0 ? 0 : approve / eligibleBallots;
 
   return { approve, reject, abstain, eligibleBallots, quorumMet, approvalRatio };

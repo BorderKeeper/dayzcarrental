@@ -160,6 +160,31 @@ voter).
 > scheduler. A `/tally` command is the simplest fit. If you later want auto-close at the deadline,
 > that needs a scheduled trigger (e.g. Vercel Cron) — a small follow-up, not a rearchitecture.
 
+### 5a. Temporarily lowering quorum for a live approval test [you]
+
+To verify the **approval** path end-to-end without gathering 3 voters, set a **temporary** env var
+in Vercel and redeploy:
+
+```
+GOVERNANCE_QUORUM_OVERRIDE=1
+```
+
+Then a single eligible ✅ (a @Verified account ≥ 7 days old — you) will reach quorum and the tally
+flips to **Approved → queued as a PR**. **Revert by deleting the env var and redeploying** — the code
+default stays **3**, so you're just removing the override.
+
+Guardrails on the override, so it can't be abused or forgotten:
+- **Server-only** — it is not a `NEXT_PUBLIC_` var, so it never reaches the browser bundle; the public
+  `/governance` page keeps showing the real quorum of 3.
+- **Clamped to `[1, 3]`** — it can only *lower* quorum for testing, never raise it or set it to zero.
+- **Weakens nothing else** — the compliance screen, the 7-day account-age gate, and the majority
+  threshold all still apply. A sockpuppet or non-compliant proposal is refused even at quorum 1
+  (covered by `quorumOverride.test.ts`).
+
+> This is a **test aid, not a policy change.** Remove it once you've confirmed the approval path.
+> Leaving it on would let a single voter carry a proposal — still only a *queued PR you must merge*
+> (no money/deploy), but not the intended governance.
+
 ---
 
 ## 6. Fund the budget & wire donations → budget [you]
