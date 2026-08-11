@@ -5,7 +5,7 @@ export const SITE = {
   name: "DayzCarRental.com",
   tagline: "Community car rentals for DayZ survivors — since 2026",
   // Placeholder links — replace before launch.
-  discordInvite: "https://discord.gg/your-invite-here",
+  discordInvite: "https://discord.gg/FGWmPeyeTJ",
   paypalDonate: "https://www.paypal.com/donate/?hosted_button_id=REPLACE_ME",
   // Contact shown in the retro footer.
   contactEmail: "ops@dayzcarrental.com",
