@@ -193,22 +193,47 @@ Guardrails on the override, so it can't be abused or forgotten:
 Call `topUp` once with your initial funding (an amount you choose). In the live wiring this is a
 startup step; the ledger records it as `founder-topup`.
 
-### 6b. Donations flow in automatically
-`COMPLIANCE.md`-compliant path: **donations credit the bot's budget account.** There is **no** native
-"PayPal donation auto-buys Claude credits" pipe, so the money movement itself is a banking/processor
-setup **you** own. The **accounting** is built (`ledger.donate(amountMicros)`); you connect the
-trigger:
+### 6b. Donations flow in automatically  ✅ built (`/api/paypal`)
 
-- **PayPal IPN / webhook** → your endpoint verifies the notification with PayPal → calls
-  `ledger.donate(...)` with the donated amount. (Verification + the ledger persistence layer is the
-  remaining integration work; the ledger API is ready.)
-- The bot then spends against the raised ceiling. It **cannot** spend past it, and **cannot** top
-  itself up — it just uses what's in the bank.
+`COMPLIANCE.md`-compliant path: **a PayPal donation webhook credits the bot's budget account.** The
+verification, USD amount extraction, and idempotent credit are built (`paypalVerify.ts`,
+`budgetStore.ts`, `/api/paypal/route.ts`, tested in `donations.test.ts`). The bot then spends against
+the raised ceiling — it **cannot** spend past it and **cannot** top itself up.
+
+**Founder steps to turn it on:**
+
+1. **PayPal REST app** — PayPal Developer dashboard → Apps & Credentials → create/enable a REST app.
+   Copy the **Client ID** and **Secret**. Set in Vercel (Production):
+   - `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (**secrets**)
+   - `PAYPAL_ENV` = `live` (or `sandbox` for testing)
+2. **Webhook** — in the same app, add a webhook with URL `https://dayzcarrental.com/api/paypal`,
+   subscribed to **`PAYMENT.CAPTURE.COMPLETED`** (and optionally `PAYMENT.SALE.COMPLETED`). Copy the
+   generated **Webhook ID** → set `PAYPAL_WEBHOOK_ID` in Vercel. (The endpoint verifies every delivery
+   against this id; an unverifiable POST is rejected 401 and credits nothing.)
+3. **Durable store** — ⚠️ the built-in store is **in-memory and resets on every serverless cold
+   start**, so it is fine for a sandbox test but **not** for production. For a real deployment, back
+   the `BudgetStore` interface (`src/lib/governance/budgetStore.ts`) with a durable KV/DB — e.g.
+   **Vercel KV / Upstash Redis** (add via Vercel → Storage) or Postgres. This is a small, well-scoped
+   swap (the interface is 4 methods); it's the one piece that needs a real datastore, and it's the
+   natural next AI-assisted task once you've picked a provider.
+4. **Redeploy.**
+
+**Test (sandbox):** trigger a sandbox donation (or PayPal's webhook simulator) → the `/api/paypal`
+response shows `credited: true` and the new balance; a re-delivered event shows `credited: false`
+(idempotent — no double-credit).
+
+**Only USD completed payments are credited** — other currencies and non-payment events are verified
+but ignored rather than mis-converted (a deliberate safe refusal; extend `extractDonation` if you add
+currencies).
 
 > **What stays off (by design):** the bot never *pulls* money, never initiates a top-up, and never
 > exceeds budget. Automatic *inflow* is fine; autonomous *spend decisions beyond the balance* do not
 > exist in the code. This matches Phase 3's "capped, allowlisted, logged, vetoable" direction in
 > `ROADMAP.md` — with the extra-strong property that the cap is simply "what donors have given."
+
+> **Connect it to the AI builder:** once the durable store is live, pass the funded budget into the
+> Actions build path so AI feature-builds are budget-capped (removes the uncapped-spend caveat noted
+> in `FOLLOWUPS.md`). Small follow-up.
 
 ---
 
