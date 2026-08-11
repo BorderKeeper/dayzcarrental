@@ -61,9 +61,13 @@ guardrails themselves), dangerous shell, and unsafe git; `CLAUDE.md`/`COMPLIANCE
 untrusted-input trust model and money rules; `propose-change` + `compliance-check` skills encode the
 safe workflow. Flow is **feature branch → PR → founder merges**. Full detail in `GUARDRAILS.md`.
 
-**Deferred guardrail work (later):** CI/CD guardrails (GitHub branch protection, required status
-checks, signed/verified commits, CODEOWNERS) and a structured **`@`-command PR-conversation
-protocol** for maintainers to iron out intent with the AI on each PR before the founder merges.
+**Server-side protection (live):** `main` is protected by a GitHub ruleset (`protect-main`) — PRs
+required, no force-push, no deletion, no bypass. Repo is public (BorderKeeper/dayzcarrental) to
+enable rulesets on the free plan. See `GUARDRAILS.md`.
+
+**Deferred guardrail work (later):** required **status checks** (CI build gate on PRs),
+signed/verified commits, CODEOWNERS, and a structured **`@`-command PR-conversation protocol** for
+maintainers to iron out intent with the AI on each PR before the founder merges.
 
 ## Follow-up sessions
 - **A — Website** (Next.js + Vercel mockup, dual-audience, mock data, contributor onboarding).

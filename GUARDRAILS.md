@@ -65,8 +65,26 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"src/app/page.tsx"}}' | node
 # → no output (allowed)
 ```
 
+## Server-side branch protection (live)
+
+`main` is protected by a GitHub **repository ruleset** (`protect-main`, active, no bypass actors):
+
+- **Changes must be made through a pull request** — direct pushes to `main` are rejected server-side
+  (verified: `GH013: ... Changes must be made through a pull request`).
+- **No force-pushes** (`non_fast_forward`) and **no branch deletion** (`deletion`).
+- `required_approving_review_count: 0` — the founder can merge their own PR without a second
+  approver, but nothing can bypass the PR requirement (`current_user_can_bypass: never`).
+
+This is the server-side backstop to the local `guard.js` hook: even if the hook were bypassed, GitHub
+still refuses a direct push to `main`. Manage it at
+<https://github.com/BorderKeeper/dayzcarrental/rules> or via
+`gh api repos/BorderKeeper/dayzcarrental/rulesets`.
+
+> Note: the repo was made **public** to enable rulesets on a free plan (a private repo would need
+> GitHub Pro). It contains no secrets.
+
 ## Deliberately deferred (see ROADMAP.md)
 
-CI/CD guardrails (branch protection, required checks, signed commits) and the structured
-`@`-command PR-conversation protocol between maintainers and the AI are **later roadmap items**, not
-built yet.
+Required **status checks** (a CI build gate on PRs), **signed/verified commits**, **CODEOWNERS**, and
+the structured `@`-command PR-conversation protocol between maintainers and the AI are **later roadmap
+items**, not built yet.
