@@ -180,18 +180,18 @@ test("discordVerify: accepts a correctly-signed request and rejects tampering", 
 // ---------------------------------------------------------------------------
 // DISCORD ADAPTER → GOVERNANCE ENGINE
 // ---------------------------------------------------------------------------
+// Screen-only config (no discord client): /propose is screened + acknowledged.
+function screenOnlyCfg() {
+  return { roster: new Map<string, Member>(), nowMs: 1_700_000_000_000 };
+}
+
 test("adapter: PING returns PONG", () => {
-  const engine = new GovernanceEngine(new Map());
-  const res = handleInteraction({ type: InteractionType.PING }, { engine, roster: new Map() });
-  assert.equal(res.type, InteractionResponseType.PONG);
+  const { response } = handleInteraction({ type: InteractionType.PING }, screenOnlyCfg());
+  assert.equal(response.type, InteractionResponseType.PONG);
 });
 
 test("adapter: a non-compliant /propose is dead on arrival regardless of who sent it", () => {
-  const roster = new Map<string, Member>([
-    ["u1", { id: "u1", handle: "Trusted", roles: ["verified", "maintainer"], accountAgeDays: 100 }],
-  ]);
-  const engine = new GovernanceEngine(roster);
-  const res = handleInteraction(
+  const { response, deferred } = handleInteraction(
     {
       type: InteractionType.APPLICATION_COMMAND,
       data: {
@@ -204,18 +204,18 @@ test("adapter: a non-compliant /propose is dead on arrival regardless of who sen
       },
       member: { user: { id: "u1", username: "Trusted" } },
     },
-    { engine, roster },
+    screenOnlyCfg(),
   );
-  assert.equal(res.type, InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE);
-  assert.match(res.data!.content, /Dead on arrival|cannot be approved/i);
+  // Dead on arrival → immediate ephemeral refusal, NO deferred vote post.
+  assert.equal(response.type, InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE);
+  assert.equal(deferred, undefined);
+  assert.match(response.data!.content!, /dead on arrival|will not be put to a vote/i);
 });
 
 test("adapter: an unknown caller is not elevated — treated as @everyone", () => {
-  const engine = new GovernanceEngine(new Map());
-  // A compliant proposal with quorum-reaching votes injected, but the caller is
-  // unknown → still fine to screen/acknowledge; the point is no authority leaks
-  // from the Discord payload. We assert the reply is produced and safe.
-  const res = handleInteraction(
+  // Screen-only mode: a compliant proposal is acknowledged; no authority leaks
+  // from the Discord payload (empty roster → engine sees no eligible voters).
+  const { response } = handleInteraction(
     {
       type: InteractionType.APPLICATION_COMMAND,
       data: {
@@ -228,8 +228,7 @@ test("adapter: an unknown caller is not elevated — treated as @everyone", () =
       },
       user: { id: "stranger", username: "Nobody" },
     },
-    { engine, roster: new Map() },
+    screenOnlyCfg(),
   );
-  // No votes injected → no quorum → not approved, not queued. Safe default.
-  assert.match(res.data!.content, /No quorum|Rejected|received/i);
+  assert.match(response.data!.content!, /No quorum|Rejected|received/i);
 });

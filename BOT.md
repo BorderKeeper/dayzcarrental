@@ -41,19 +41,28 @@ In `src/lib/governance/`:
   `package.json` is locked). It estimates a call's worst-case cost, **refuses** if the bank can't
   afford it (no call is made), and debits **actual** token usage after. Model: `claude-opus-5`.
 - **`discordVerify.ts`** — Ed25519 signature verification via `node:crypto` (no dependency).
-- **`discordAdapter.ts`** — maps a verified `/propose` slash command to a governance proposal,
-  screens it, and replies. Unknown callers are treated as `@everyone` (never elevated by the
-  payload).
+- **`discordAdapter.ts`** — maps verified `/propose` and `/tally` slash commands to governance
+  actions. Unknown callers are treated as `@everyone` (never elevated by the payload).
+- **`discordApi.ts`** — authenticated Discord REST helpers (read reactions/roles, post messages,
+  edit the deferred interaction response) over raw `fetch`, no dependency.
+- **`snowflake.ts`** — derives a reactor's account age from their Discord user ID (no API call).
+- **`voteTally.ts`** — the vote-counting flow: `/propose` posts a **public** vote message whose
+  embed encodes the proposal (**the message is the store — no database**); `/tally` reads it back
+  plus its ✅/❌/🤷 reactions, resolves each reactor to a governance `Member` (age from the
+  snowflake, roles via the API + your role map), and runs the engine.
 - **`src/app/api/discord/route.ts`** — the serverless webhook endpoint (`/api/discord`) on the
   Node.js runtime. Verifies the signature against the raw body, answers Discord's `PING`, routes
-  commands. **Fails closed** if `DISCORD_PUBLIC_KEY` is unset (503).
+  commands, and runs slow work (posting/tallying) after the ack via `after()`. **Fails closed** if
+  `DISCORD_PUBLIC_KEY` is unset (503).
 
-Covered by tests in `src/lib/governance/__tests__/bot.test.ts` (run with
+Covered by tests in `src/lib/governance/__tests__/bot.test.ts` and `voteTally.test.ts` (run with
 `NODE="$(asdf where nodejs)/bin/node" ./src/lib/governance/__tests__/run.sh`).
 
-The endpoint ships **inert**: an empty roster and no live vote source, so it safely screens and
-acknowledges proposals without granting anyone authority. You connect the real roster + reaction-vote
-source when you're ready (step 5).
+**Two modes, chosen automatically by which env vars are set:**
+- **Screen-only** (just `DISCORD_PUBLIC_KEY`): `/propose` is compliance-screened and acknowledged,
+  but nothing is posted publicly and `/tally` reports "not configured." Safe default.
+- **Full voting** (also `DISCORD_BOT_TOKEN` + `DISCORD_GUILD_ID` + `DISCORD_ROLE_MAP`): `/propose`
+  posts a public vote message; `/tally` counts real reactions with real eligibility. See §5.
 
 ---
 
@@ -75,6 +84,10 @@ the repo:
 |----------|------|---------|
 | `DISCORD_PUBLIC_KEY` | App public key (verifies inbound signatures) | No, but env-sourced |
 | `ANTHROPIC_API_KEY` | The bot's Claude key | **Yes** |
+| `DISCORD_BOT_TOKEN` | Bot token — read reactions/roles, post vote + result messages (enables voting) | **Yes** |
+| `DISCORD_GUILD_ID` | Your server ID (for member-role lookups at tally time) | No |
+| `DISCORD_ROLE_MAP` | JSON mapping server role IDs → governance roles, e.g. `{"<verifiedRoleId>":"verified","<runnerRoleId>":"runner"}` | No |
+| `DISCORD_VOTE_CHANNEL_ID` | *(optional)* channel for public vote posts; defaults to the invoking channel | No |
 
 > These are read at runtime by `src/app/api/discord/route.ts` and the AI client. `.env*` files are
 > **locked** (`GUARDRAILS.md`) — set them in Vercel's dashboard, not in a committed file.
@@ -91,48 +104,61 @@ the repo:
 
 ---
 
-## 4. Register the `/propose` command [you]
+## 4. Register the `/propose` and `/tally` commands [you]
 
 Registering slash commands is a one-time authenticated call to Discord's API with **your** bot token.
-Do it from your own shell (the `!` prefix runs it in this session so output lands here if you want
-help reading it):
+Do it from your own shell (keep the `-d` JSON on one line to avoid the "invalid JSON" trap). Register
+as a **guild** command (`/applications/$APP_ID/guilds/$GUILD_ID/commands`) for instant availability
+while testing; global commands take ~1h to propagate.
 
 ```bash
-# Fill APP_ID and BOT_TOKEN from the Developer Portal; do NOT paste them into the repo.
-curl -X POST "https://discord.com/api/v10/applications/$APP_ID/commands" \
-  -H "Authorization: Bot $BOT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "propose",
-    "description": "Propose a change to the site/community (goes through the governance guardrails)",
-    "options": [
-      {"name": "kind",  "description": "Action kind (content-edit, server-add, policy-note, safehouse-change)", "type": 3, "required": true},
-      {"name": "title", "description": "Short title",       "type": 3, "required": true},
-      {"name": "body",  "description": "What and why",      "type": 3, "required": true}
-    ]
-  }'
-```
+# /propose
+curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
+  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"propose","description":"Propose a change (goes through the governance guardrails)","options":[{"name":"kind","description":"content-edit, server-add, policy-note, or safehouse-change","type":3,"required":true},{"name":"title","description":"Short title","type":3,"required":true},{"name":"body","description":"What and why","type":3,"required":true}]}'
 
-(Register as a **guild** command — `/applications/$APP_ID/guilds/$GUILD_ID/commands` — for instant
-availability while testing; global commands take ~1h to propagate.)
+# /tally
+curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
+  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"tally","description":"Count the votes on a proposal and post the outcome","options":[{"name":"message","description":"The vote message ID to tally","type":3,"required":true},{"name":"channel","description":"Channel ID of the vote message (defaults to here)","type":3,"required":false}]}'
+```
 
 ---
 
-## 5. Wire the real roster + votes (going live) [you + AI]
+## 5. Turn on real vote counting [you]  ✅ built
 
-The deployed endpoint is inert by default (empty roster, no vote source). To make votes real:
+The vote flow is built and tested (`voteTally.ts`, `discordApi.ts`, `snowflake.ts`). To activate it,
+set the voting env vars from §2 (`DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_ROLE_MAP`) in
+Vercel and redeploy. Then:
 
-- **Roster:** map Discord user IDs → governance `Member`s (roles + account age). Source this from the
-  Discord roles you set up in `DISCORD.md` (@Verified, @Runner, @Main Runner, @Maintainer, @Founder).
-- **Vote source:** provide `votesFor(proposalId)` in the adapter config, reading ✅/❌/🤷 reaction
-  tallies from the `#vote` channel.
+**How it runs live:**
+1. A member runs `/propose kind:… title:… body:…`.
+2. The bot **screens** it. Non-compliant → ephemeral "dead on arrival," **no public post**.
+3. Compliant → the bot posts a **public vote message** in the vote channel with the proposal embed
+   and seeds ✅/❌/🤷. That message *is* the store — no database.
+4. Members react during the voting window.
+5. Anyone runs `/tally message:<the vote message id>`. The bot reads the reactions, resolves each
+   reactor's eligibility (**account age from their Discord ID; roles via `DISCORD_ROLE_MAP`**), runs
+   the engine, and posts the outcome publicly.
 
-This needs a small amount of live Discord read access (reactions) and is the natural next AI-assisted
-task once the endpoint is verified. Until then, the manual-shape flow in `DISCORD.md §5a` stands.
+**Building `DISCORD_ROLE_MAP`:** turn on Developer Mode in Discord, right-click each governance role
+(Server Settings → Roles → right-click → Copy Role ID), and map it to the governance role name:
 
-> **Eligibility, quorum, threshold** are already fixed in `GOVERNANCE.md §3`
-> (@Verified + account-age ≥ 7d, quorum 3, simple majority). The vote source just needs to feed real
-> reactions into that engine.
+```json
+{"<VerifiedRoleId>":"verified","<RunnerRoleId>":"runner","<MainRunnerRoleId>":"main-runner","<MaintainerRoleId>":"maintainer","<ModeratorRoleId>":"moderator","<FounderRoleId>":"founder"}
+```
+
+Only roles that carry governance weight need mapping; anything unmapped just isn't granted. At
+minimum map `verified` (that plus the 7-day account-age gate is what makes a reactor an eligible
+voter).
+
+> **Eligibility, quorum, threshold** are fixed in `GOVERNANCE.md §3` (@Verified + account-age ≥ 7d,
+> quorum 3, simple majority). The vote flow feeds real reactions into that same engine — the sockpuppet
+> and unverified-reactor cases are covered by `voteTally.test.ts`.
+
+> **Why `/tally` is manual (not automatic at a deadline):** a serverless webhook has no background
+> scheduler. A `/tally` command is the simplest fit. If you later want auto-close at the deadline,
+> that needs a scheduled trigger (e.g. Vercel Cron) — a small follow-up, not a rearchitecture.
 
 ---
 
