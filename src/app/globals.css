@@ -1,0 +1,447 @@
+/* ============================================================
+   DayzCarRental.com — retro theme
+   Early-2000s feel: blue/white palette, boxy bordered panels,
+   subtle bevels, Verdana/Arial. Responsive + readable.
+   ============================================================ */
+
+:root {
+  --blue-dark: #003a70;
+  --blue: #0a4d8c;
+  --blue-light: #2f6fb3;
+  --panel: #e8eef5;
+  --panel-border: #9db4cf;
+  --bevel-light: #ffffff;
+  --bevel-dark: #6f8db3;
+  --ink: #14243a;
+  --link: #0a4d8c;
+  --link-visited: #5b3a8c;
+  --accent: #c8a415; /* faded gold, for the classic "hot" bits */
+  --danger: #a11;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Verdana, Geneva, Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: #c3d3e6;
+  /* faint diagonal texture reminiscent of old tiled backgrounds */
+  background-image: linear-gradient(135deg, #c3d3e6 0%, #d7e2f0 100%);
+  background-attachment: fixed;
+}
+
+a {
+  color: var(--link);
+  text-decoration: underline;
+}
+a:visited {
+  color: var(--link-visited);
+}
+a:hover {
+  color: var(--blue-dark);
+  background: #fdf6d3;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Trebuchet MS", Verdana, Arial, sans-serif;
+  color: var(--blue-dark);
+  margin: 0 0 0.5em;
+}
+h1 {
+  font-size: 22px;
+}
+h2 {
+  font-size: 17px;
+  border-bottom: 2px solid var(--panel-border);
+  padding-bottom: 3px;
+}
+h3 {
+  font-size: 14px;
+}
+
+/* ---- page frame -------------------------------------------- */
+.site {
+  max-width: 960px;
+  margin: 0 auto;
+  background: #ffffff;
+  border-left: 1px solid var(--bevel-dark);
+  border-right: 1px solid var(--bevel-dark);
+  min-height: 100vh;
+}
+
+/* ---- header ------------------------------------------------ */
+.masthead {
+  background: linear-gradient(180deg, var(--blue) 0%, var(--blue-dark) 100%);
+  color: #fff;
+  padding: 14px 18px;
+  border-bottom: 3px solid var(--accent);
+}
+.masthead .brand {
+  font-family: "Trebuchet MS", Verdana, sans-serif;
+  font-size: 28px;
+  font-weight: bold;
+  letter-spacing: -0.5px;
+  color: #fff;
+  text-decoration: none;
+  text-shadow: 1px 1px 0 #002144;
+}
+.masthead .brand:hover {
+  background: transparent;
+  color: #fdf6d3;
+}
+.masthead .brand .dot {
+  color: var(--accent);
+}
+.masthead .tagline {
+  font-size: 11px;
+  color: #cfe0f5;
+  margin-top: 2px;
+}
+
+/* ---- top navigation bar ------------------------------------ */
+.topnav {
+  display: flex;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, #f4f8fc 0%, var(--panel) 100%);
+  border-top: 1px solid var(--bevel-light);
+  border-bottom: 1px solid var(--bevel-dark);
+}
+.topnav a {
+  display: block;
+  padding: 8px 16px;
+  color: var(--blue-dark);
+  font-weight: bold;
+  text-decoration: none;
+  border-right: 1px solid var(--panel-border);
+  font-size: 12px;
+}
+.topnav a:hover {
+  background: var(--blue-light);
+  color: #fff;
+}
+.topnav a[aria-current="page"] {
+  background: var(--blue-dark);
+  color: #fff;
+}
+
+/* ---- main content ------------------------------------------ */
+.content {
+  padding: 18px;
+}
+
+/* ---- retro panels ------------------------------------------ */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  padding: 14px;
+  margin: 0 0 16px;
+}
+.panel--plain {
+  background: #fff;
+}
+.panel__title {
+  margin-top: 0;
+}
+
+/* ---- buttons ----------------------------------------------- */
+.btn {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  color: #fff;
+  background: linear-gradient(180deg, var(--blue-light) 0%, var(--blue) 100%);
+  border: 1px solid var(--blue-dark);
+  border-top-color: var(--bevel-light);
+  border-left-color: #6ea0d6;
+  padding: 7px 16px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover {
+  background: linear-gradient(180deg, var(--blue) 0%, var(--blue-dark) 100%);
+  color: #fdf6d3;
+}
+.btn:active {
+  border-top-color: var(--blue-dark);
+  border-left-color: var(--blue-dark);
+}
+.btn--secondary {
+  background: linear-gradient(180deg, #fff 0%, var(--panel) 100%);
+  color: var(--blue-dark);
+  border-color: var(--panel-border);
+}
+.btn--secondary:hover {
+  background: var(--panel);
+  color: var(--blue-dark);
+}
+.btn--big {
+  font-size: 15px;
+  padding: 11px 22px;
+}
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- forms ------------------------------------------------- */
+label {
+  display: block;
+  font-weight: bold;
+  margin: 10px 0 3px;
+  color: var(--blue-dark);
+}
+input[type="text"],
+input[type="email"],
+input[type="number"],
+select,
+textarea {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 7px;
+  border: 1px solid var(--bevel-dark);
+  border-top-color: #46617f;
+  border-left-color: #46617f;
+  background: #fff;
+  width: 100%;
+  max-width: 420px;
+}
+textarea {
+  max-width: 100%;
+  min-height: 70px;
+}
+.field-hint {
+  font-weight: normal;
+  font-size: 11px;
+  color: #4a5a70;
+}
+.field-error {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: bold;
+  margin-top: 3px;
+}
+
+/* ---- notices ----------------------------------------------- */
+.notice {
+  border: 1px solid var(--accent);
+  background: #fdf6d3;
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+.notice--success {
+  border-color: #3a8c3a;
+  background: #e4f5e4;
+}
+.notice--demo {
+  border-color: var(--accent);
+  background: #fdf6d3;
+}
+
+/* ---- vehicle grid ------------------------------------------ */
+.vehicle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.vcard {
+  background: #fff;
+  border: 1px solid var(--panel-border);
+  border-top-color: var(--bevel-light);
+  border-left-color: var(--bevel-light);
+  display: flex;
+  flex-direction: column;
+}
+.vcard__img {
+  position: relative;
+  background: repeating-linear-gradient(
+    45deg,
+    #dde7f2,
+    #dde7f2 10px,
+    #d3dfee 10px,
+    #d3dfee 20px
+  );
+  border-bottom: 1px solid var(--panel-border);
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6f8db3;
+  font-size: 11px;
+  text-align: center;
+  overflow: hidden;
+}
+.vcard__img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.vcard__body {
+  padding: 10px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.vcard__specs {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 10px;
+  font-size: 12px;
+}
+.vcard__specs li {
+  padding: 2px 0;
+  border-bottom: 1px dotted #cdd9e8;
+}
+.vcard__specs .k {
+  color: var(--blue-dark);
+  font-weight: bold;
+}
+.price {
+  color: var(--danger);
+  font-weight: bold;
+}
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 2px;
+  color: #fff;
+}
+.tag--small {
+  background: #3a8c3a;
+}
+.tag--medium {
+  background: var(--blue);
+}
+.tag--large {
+  background: #a35;
+}
+
+/* ---- rent step flow ---------------------------------------- */
+.steps {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.steps li {
+  list-style: none;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 4px 10px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: #6f8db3;
+}
+.steps li.active {
+  background: var(--blue-dark);
+  color: #fff;
+  border-color: var(--blue-dark);
+}
+.steps li.done {
+  background: #e4f5e4;
+  color: #3a8c3a;
+  border-color: #8cc48c;
+}
+
+.option-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.option-list li {
+  border: 1px solid var(--panel-border);
+  background: #fff;
+  margin-bottom: 6px;
+}
+.option-list label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  margin: 0;
+  font-weight: normal;
+  cursor: pointer;
+}
+.option-list label:hover {
+  background: #f4f8fc;
+}
+.option-list input {
+  width: auto;
+  margin-top: 3px;
+}
+.option-list .opt-name {
+  font-weight: bold;
+  color: var(--blue-dark);
+}
+.option-list .opt-note {
+  font-size: 11px;
+  color: #4a5a70;
+}
+
+/* ---- misc -------------------------------------------------- */
+.muted {
+  color: #4a5a70;
+}
+.small {
+  font-size: 11px;
+}
+.stack > * + * {
+  margin-top: 10px;
+}
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.hr {
+  border: none;
+  border-top: 1px solid var(--panel-border);
+  margin: 14px 0;
+}
+
+/* ---- footer ------------------------------------------------ */
+.footer {
+  background: var(--panel);
+  border-top: 1px solid var(--bevel-dark);
+  padding: 14px 18px;
+  font-size: 11px;
+  color: #4a5a70;
+  text-align: center;
+}
+.footer a {
+  color: var(--blue-dark);
+}
+
+/* ---- responsive -------------------------------------------- */
+@media (max-width: 640px) {
+  .topnav {
+    flex-direction: column;
+  }
+  .topnav a {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .masthead .brand {
+    font-size: 22px;
+  }
+}
