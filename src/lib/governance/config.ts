@@ -36,6 +36,29 @@ export const GOVERNANCE = {
   voteWindowHours: 48,
 } as const;
 
+// The quorum the engine actually applies. Defaults to GOVERNANCE.quorumMinBallots
+// (3 — the canonical policy in GOVERNANCE.md §3). A TEMPORARY, server-only env
+// override (`GOVERNANCE_QUORUM_OVERRIDE`) exists ONLY so the founder can run a
+// live end-to-end approval test without gathering 3 voters, then remove it.
+//
+// Guardrails on the override, by design:
+//   * server-only — it is NOT a NEXT_PUBLIC_ var, so it never reaches the
+//     client bundle; the public /governance page keeps showing the real 3.
+//   * clamped to the sane range [1, quorumMinBallots] — it can only ever LOWER
+//     quorum for testing, never raise or zero it.
+//   * never weakens the compliance screen, the account-age gate, or the
+//     majority threshold — a non-compliant or unverified vote is unaffected.
+// Remove the env var (and redeploy) to restore the real quorum. The code
+// default here stays 3 so main never disagrees with GOVERNANCE.md.
+export function effectiveQuorum(): number {
+  const raw = typeof process !== "undefined" ? process.env?.GOVERNANCE_QUORUM_OVERRIDE : undefined;
+  if (!raw) return GOVERNANCE.quorumMinBallots;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return GOVERNANCE.quorumMinBallots;
+  // Clamp: only ever lower quorum, never below 1 or above the real value.
+  return Math.max(1, Math.min(GOVERNANCE.quorumMinBallots, n));
+}
+
 // The action allowlist. The governance engine will ONLY ever queue actions
 // whose kind is listed here AND flagged enabled. Everything financial or
 // deploy-related is present but DISABLED, so the shape is built now and the
