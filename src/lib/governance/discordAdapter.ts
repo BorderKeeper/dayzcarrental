@@ -71,6 +71,11 @@ export interface AdapterConfig {
   voteChannelId?: string; // where public vote posts go (defaults to the invoking channel)
   nowMs: number;
   roster: Map<string, Member>;
+  // Fired when a /tally resolves to "approved" — the route wires this to the
+  // GitHub repository_dispatch that kicks off the AI feature-builder workflow.
+  // Returns a short human status line to append to the outcome post. Optional:
+  // absent → approvals are reported but no build is triggered.
+  onApproved?: (proposal: Proposal) => Promise<string>;
 }
 
 function opts(interaction: DiscordInteraction): Record<string, string> {
@@ -197,10 +202,21 @@ function handleTally(interaction: DiscordInteraction, cfg: AdapterConfig): Handl
         await editOriginal(discord, interaction, `Couldn't tally: ${result.error}`);
         return;
       }
+      // On approval, kick off the AI feature-builder (if wired). It only ever
+      // opens a PR the founder merges — never auto-merges, never deploys.
+      let buildLine = "";
+      if (result.decision === "approved" && cfg.onApproved) {
+        try {
+          buildLine = "\n" + (await cfg.onApproved(result.proposal));
+        } catch {
+          buildLine = "\n⚠️ Approved, but the AI build trigger failed — kick it off manually.";
+        }
+      }
+
       // Post the outcome publicly in the vote channel (the audit record), and
       // confirm to the caller.
       await discord.createMessage(channelId, {
-        content: `🗳️ **Vote result — ${result.proposal.title}**\n${result.outcomeSummary}`,
+        content: `🗳️ **Vote result — ${result.proposal.title}**\n${result.outcomeSummary}${buildLine}`,
       });
       await editOriginal(discord, interaction, `Tallied. Decision: **${result.decision}**. Posted the result in the channel.`);
     },

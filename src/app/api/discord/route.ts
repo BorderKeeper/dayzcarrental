@@ -19,7 +19,8 @@ import { NextResponse, after } from "next/server";
 import { verifyDiscordRequest } from "@/lib/governance/discordVerify";
 import { handleInteraction, type DiscordInteraction } from "@/lib/governance/discordAdapter";
 import { DiscordApiClient } from "@/lib/governance/discordApi";
-import type { Member, Role } from "@/lib/governance/types";
+import { dispatchAiBuild } from "@/lib/governance/githubDispatch";
+import type { Member, Proposal, Role } from "@/lib/governance/types";
 import type { RoleMap } from "@/lib/governance/voteTally";
 
 export const runtime = "nodejs";
@@ -75,6 +76,29 @@ export async function POST(request: Request) {
   // authoritative source. The roster only matters for the screen-only fallback.
   const roster = new Map<string, Member>();
 
+  // If a GitHub dispatch token is configured, an APPROVED vote fires the AI
+  // feature-builder workflow (repository_dispatch). Absent → approvals are just
+  // reported. The builder only ever opens a PR the founder merges.
+  const ghToken = process.env.GITHUB_DISPATCH_TOKEN;
+  const ghOwner = process.env.GITHUB_REPO_OWNER ?? "BorderKeeper";
+  const ghRepo = process.env.GITHUB_REPO_NAME ?? "dayzcarrental";
+  const onApproved = ghToken
+    ? async (proposal: Proposal): Promise<string> => {
+        const okDispatch = await dispatchAiBuild(
+          {
+            proposalId: proposal.id,
+            title: proposal.title,
+            actionKind: proposal.actionKind,
+            body: proposal.rawBody,
+          },
+          { token: ghToken, owner: ghOwner, repo: ghRepo },
+        );
+        return okDispatch
+          ? "🤖 The AI maintainer is building this now — a PR will open for the founder to review."
+          : "⚠️ Approved, but the AI build trigger failed — kick it off manually.";
+      }
+    : undefined;
+
   const handled = handleInteraction(interaction, {
     discord,
     guildId,
@@ -82,6 +106,7 @@ export async function POST(request: Request) {
     voteChannelId,
     nowMs: Date.now(),
     roster,
+    onApproved,
   });
 
   // Run any deferred Discord work AFTER the response is flushed, so we ack

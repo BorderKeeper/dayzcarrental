@@ -17,3 +17,7 @@ export * from "./discordAdapter";
 export * from "./snowflake";
 export * from "./discordApi";
 export * from "./voteTally";
+export * from "./lockedPaths";
+export * from "./builderTools";
+export * from "./buildLoop";
+export * from "./githubDispatch";
