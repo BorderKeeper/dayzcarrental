@@ -46,7 +46,9 @@ and a **PayPal-funded treasury** (donations now; rental/payouts later, gated on 
   Includes a **secondary "runner-ops" side channel** — separate from the major-change vote flow —
   where runners handle routine admin (adding/removing safehouses, staging, recovery) without a full
   community vote. Runners with a per-server **"main runner" tag** can influence that server's
-  safehouse list directly.
+  safehouse list directly. **Built (Session C, content/ops only):** the engine lives in
+  `src/lib/governance/` with a persona simulation test suite; full model + chosen values in
+  `GOVERNANCE.md`. Spend/deploy remain disabled at the action allowlist.
 - **Phase 3 — Treasury transparency + guarded AI spend:** public ledger; capped, allowlisted,
   logged, vetoable spend; optional deploy behind CI + human approval.
 - **Phase 4 — Rental economics:** default = **in-game commodity payment + optional donations**
@@ -80,7 +82,13 @@ maintainers to iron out intent with the AI on each PR before the founder merges.
 
 ## Open items
 Legal entity vs. informal community & jurisdiction · backup-admin/succession · whether payouts ever
-go live or it stays donation-only permanently · exact voting rules (quorum, threshold, eligibility,
-override mechanics).
+go live or it stays donation-only permanently.
+
+**Resolved (2026-08-11, Session C):** exact voting rules are now chosen and recorded in
+`GOVERNANCE.md` §3 (and enforced in `src/lib/governance/config.ts`): eligibility = `@Verified` +
+account age ≥ 7 days; quorum = 3 eligible non-abstain ballots; threshold = simple majority (ties
+fail); founder override/veto sits on top of any tally. New rule surfaced by the persona simulation:
+**every active server must have at least one assigned `@Main Runner`**, else its runner disputes
+escalate to a mod/founder (`GOVERNANCE.md` §5b).
 
 _Full rationale in the session plan file: `~/.claude/plans/i-would-like-to-frolicking-scott.md`_

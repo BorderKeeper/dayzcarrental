@@ -52,6 +52,10 @@ export default function MaintainerPage() {
           Financial and deployment powers stay <strong>disabled</strong> until later phases add spend
           caps, allow-lists, and audit controls. Early maintainers focus on content and operations.
         </p>
+        <p className="small">
+          See the exact quorum, threshold, and eligibility rules on the{" "}
+          <a href="/governance">How Governance Works</a> page.
+        </p>
       </div>
 
       <div className="panel" style={{ textAlign: "center" }}>
