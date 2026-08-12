@@ -218,11 +218,18 @@ the raised ceiling — it **cannot** spend past it and **cannot** top itself up.
    without them it falls back to an in-memory store (warm-instance only — the response's `durable:
    false` flags that). Donations are credited idempotently by PayPal event id, so re-delivery never
    double-credits, and the balance survives cold starts.
-4. **Redeploy.**
+4. **Donate button** — ✅ built (`/donate`). The button links to `NEXT_PUBLIC_PAYPAL_DONATE_URL`
+   (a PayPal hosted-button / donation link you create in the PayPal dashboard — **sandbox** for
+   testing, **live** later). Set it in Vercel; until it's set the page shows a placeholder notice.
+   The `/donate` page also shows the **live upkeep balance** (via `/api/treasury`, read-only), so you
+   can watch it rise after a donation.
+5. **Redeploy.**
 
-**Test (sandbox):** trigger a sandbox donation (or PayPal's webhook simulator) → the `/api/paypal`
-response shows `credited: true` and the new balance; a re-delivered event shows `credited: false`
-(idempotent — no double-credit).
+**Test (sandbox):** a real sandbox donation through the donate button produces a genuinely-signed
+webhook → `/api/paypal` responds `credited: true` + the new balance, and the `/donate` page balance
+rises on refresh. A re-delivered event shows `credited: false` (idempotent). **Note:** PayPal's
+built-in *webhook simulator* sends an unsigned/test payload that our verifier correctly rejects (401)
+— use a real sandbox checkout to test, not the simulator.
 
 **Only USD completed payments are credited** — other currencies and non-payment events are verified
 but ignored rather than mis-converted (a deliberate safe refusal; extend `extractDonation` if you add
