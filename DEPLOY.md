@@ -90,6 +90,9 @@ Two channels credit the upkeep budget. The **webhook** (`/api/paypal`) is the fa
 PayPal's delivery lags and no-code pay-link payments don't reliably produce an event. Both key
 idempotency on the PayPal **transaction id**, so a donation seen by both credits **once**.
 
+Both credit **net of PayPal's fee** — a $1.00 gift banks $0.68. This balance is a hard ceiling on AI
+spend, so it tracks money actually received, not the headline amount.
+
 ### 5a. Enable Transaction Search on the PayPal app — [you]
 
 The reconciler reads `GET /v1/reporting/transactions`, which is off by default:

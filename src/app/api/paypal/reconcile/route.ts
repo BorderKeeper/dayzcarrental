@@ -69,9 +69,9 @@ async function handle(request: Request): Promise<NextResponse> {
   const window = reconcileWindow(days);
   const dryRun = new URL(request.url).searchParams.get("dry") === "1";
 
-  let donations;
+  let scan;
   try {
-    donations = await listDonations(creds, window);
+    scan = await listDonations(creds, window);
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "PayPal transaction search failed" },
@@ -82,7 +82,7 @@ async function handle(request: Request): Promise<NextResponse> {
   // Credit each; `applied: false` means some channel already booked it.
   const credited: { transactionId: string; currency: string; amountMicros: number; time: string }[] = [];
   let alreadyApplied = 0;
-  for (const d of donations) {
+  for (const d of scan.donations) {
     if (dryRun) {
       credited.push(d);
       continue;
@@ -96,9 +96,12 @@ async function handle(request: Request): Promise<NextResponse> {
     ok: true,
     dryRun,
     window,
-    scanned: donations.length,
-    credited,
+    rowsScanned: scan.rowsScanned, // every ledger row PayPal returned
+    pages: scan.pages,
+    creditable: scan.donations.length, // …of which these passed the filters
+    credited, // …of which these were new (the rest were already applied)
     alreadyApplied,
+    amountsAre: "net of PayPal fees",
     balancesMicros: await store.getBalances(),
   });
 }

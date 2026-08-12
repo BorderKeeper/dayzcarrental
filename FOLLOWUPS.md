@@ -32,31 +32,34 @@ temporarily) → `/tally` → confirm a PR opens with the AI's changes.
 
 ---
 
-## 2. PayPal → budget donations [IN PROGRESS — parked at founder-action boundary]
+## 2. PayPal → budget donations [LIVE — verified end-to-end 2026-08-12]
 
-**Status:** Code built (see PR for `paypalVerify.ts`, `budgetStore.ts`, `/api/paypal` route). Reaches
-the point where it needs founder setup (PayPal app + webhook + a durable store). See `BOT.md §6`.
+**Status:** Working in production. Two real $1.00 donations were detected, credited, and persisted;
+`/api/treasury` reports the balance from durable Redis.
 
-**What it does:** a PayPal donation webhook → verify the signature → extract the USD amount →
-idempotently credit the bot's budget ledger. Donations fund AI-token upkeep (COMPLIANCE.md-allowed);
-no rental/payout/gameplay-gate path.
+**How it works — two channels, one balance:**
+- `/api/paypal` (webhook, PR #13/#15) — the fast path: verify signature → extract amount → credit.
+- `/api/paypal/reconcile` (poller, PR #16) — the backstop: reads PayPal's Transaction Search ledger
+  nightly (`vercel.json`, 04:00 UTC) and credits anything the webhook missed.
 
-**Founder steps to activate (detail in `BOT.md §6`):**
-1. PayPal Developer dashboard → create/enable a REST app → get `PAYPAL_CLIENT_ID` +
-   `PAYPAL_CLIENT_SECRET`; set in Vercel.
-2. Create a webhook pointing at `https://dayzcarrental.com/api/paypal` subscribed to
-   `PAYMENT.CAPTURE.COMPLETED` (+ optionally `CHECKOUT.ORDER.APPROVED`); set its `PAYPAL_WEBHOOK_ID`
-   in Vercel.
-3. Provision a durable budget store (the in-memory one resets on every serverless cold start) and set
-   its connection env — options noted in `BOT.md §6`. This is the one piece that needs a real
-   datastore.
-4. Redeploy.
+Both key idempotency on the PayPal **transaction id**, so a donation seen by both credits once.
+Amounts are **net of PayPal fees** — the balance is a spending ceiling, so it must reflect money
+actually banked, not gross.
 
-**Then test:** send a PayPal sandbox donation → confirm the budget balance rises (idempotently — a
-re-delivered webhook must not double-credit).
+**Setup is done** (`DEPLOY.md` §5 documents it): PayPal app + Transaction Search feature,
+`PAYPAL_*` and `REDIS_URL` and `CRON_SECRET` set in Vercel.
 
-**Once live, connect it to the builder:** pass the funded ledger into the Actions build path so AI
-builds are budget-capped (removes the uncapped-spend caveat in item 1).
+**⚠️ Known-open: the webhook itself has never fired.** Live donations only ever arrived via the
+reconciler; the Webhook Events log stayed empty. Unresolved suspects: `PAYPAL_WEBHOOK_ID` not
+matching `16M39581132446341`, or `PAYPAL_CLIENT_ID` belonging to a different app than the one owning
+that webhook (`GET /v1/notifications/webhooks` with those creds answers both). Not urgent — the
+poller makes the balance correct regardless — but the fast path is worth recovering.
+
+**Historical note:** the first two donations were credited **gross** ($2.00) before the switch to
+net; the true banked figure was $1.36. Their idempotency keys are set, so re-running won't correct
+them. Left as-is deliberately — a $0.64 overstatement, recorded here rather than silently patched.
+
+**Remaining work → item 3:** the balance is funded but nothing *enforces* it against AI spend.
 
 ---
 
