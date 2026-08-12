@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 // Lets a donor (and the founder testing the flow) watch the balance rise after
 // a donation completes. Read-only; polls once on mount + a manual refresh.
 export default function TreasuryBalance() {
-  const [state, setState] = useState<{ balance?: string; durable?: boolean; error?: boolean; loading: boolean }>({
+  const [state, setState] = useState<{ balances?: Record<string, string>; durable?: boolean; error?: boolean; loading: boolean }>({
     loading: true,
   });
 
@@ -15,12 +15,20 @@ export default function TreasuryBalance() {
     try {
       const res = await fetch("/api/treasury", { cache: "no-store" });
       const data = await res.json();
-      if (data?.ok) setState({ balance: data.balanceUsd, durable: data.durable, loading: false });
+      if (data?.ok) setState({ balances: data.balances ?? {}, durable: data.durable, loading: false });
       else setState({ error: true, loading: false });
     } catch {
       setState({ error: true, loading: false });
     }
   }
+
+  // "USD $1.0000 · CZK 13.8300", or "$0.00" when empty.
+  const summary = (() => {
+    const b = state.balances ?? {};
+    const entries = Object.entries(b);
+    if (entries.length === 0) return "$0.00";
+    return entries.map(([cur, val]) => (cur === "USD" ? val : `${cur} ${val}`)).join(" · ");
+  })();
 
   useEffect(() => {
     load();
@@ -32,7 +40,7 @@ export default function TreasuryBalance() {
         ? "Checking the upkeep budget…"
         : state.error
           ? "Upkeep budget: unavailable right now."
-          : `Current upkeep budget: ${state.balance}`}
+          : `Current upkeep budget: ${summary}`}
       {state.durable === false && !state.loading && !state.error ? " (not yet persisted)" : ""}{" "}
       <a
         href="#"

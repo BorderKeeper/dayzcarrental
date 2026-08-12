@@ -55,7 +55,7 @@ function encodeCommand(args: (string | number)[]): string {
 //   $-1        null bulk       -> null
 //   $3\r\nfoo  bulk string     -> string
 // Returns { value, consumed } or null if more bytes are needed.
-type Reply = string | number | null;
+type Reply = string | number | null | Reply[];
 function parseReply(buf: Buffer, offset: number): { value: Reply; next: number } | null {
   if (offset >= buf.length) return null;
   const type = String.fromCharCode(buf[offset]);
@@ -77,6 +77,20 @@ function parseReply(buf: Buffer, offset: number): { value: Reply; next: number }
       const dataEnd = afterLine + len;
       if (dataEnd + 2 > buf.length) return null; // bulk body not fully arrived
       return { value: buf.toString("utf8", afterLine, dataEnd), next: dataEnd + 2 };
+    }
+    case "*": {
+      // Array (e.g. SMEMBERS). Parse `count` elements recursively.
+      const count = Number.parseInt(line, 10);
+      if (count === -1) return { value: null, next: afterLine };
+      const items: Reply[] = [];
+      let pos = afterLine;
+      for (let i = 0; i < count; i++) {
+        const el = parseReply(buf, pos);
+        if (!el) return null; // array not fully arrived yet
+        items.push(el.value);
+        pos = el.next;
+      }
+      return { value: items, next: pos };
     }
     default:
       throw new Error(`Unsupported RESP reply type '${type}'.`);

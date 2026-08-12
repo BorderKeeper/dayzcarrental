@@ -36,15 +36,20 @@ function parseCommand(buf: string, off: number): [string[], number] | null {
   return [args, p - off];
 }
 
-function encodeReply(v: string | number | null): string {
+function encodeReply(v: string | number | null | string[]): string {
   if (v === null) return "$-1\r\n";
+  if (Array.isArray(v)) {
+    // RESP array of bulk strings (for SMEMBERS).
+    return `*${v.length}\r\n` + v.map((s) => `$${Buffer.byteLength(s)}\r\n${s}\r\n`).join("");
+  }
   if (typeof v === "number") return `:${v}\r\n`;
   if (v === "OK") return "+OK\r\n";
   return `$${Buffer.byteLength(v)}\r\n${v}\r\n`;
 }
 
-// A fake socket: on write, parse commands, execute against `db`, emit replies.
-function fakeSocketFactory(db: Map<string, string>) {
+// A fake socket: on write, parse commands, execute against `db` (strings) and
+// `sets` (SADD/SMEMBERS), emit replies.
+function fakeSocketFactory(db: Map<string, string>, sets: Map<string, Set<string>> = new Map()) {
   return () => {
     const sock: any = new EventEmitter();
     sock.write = (data: string) => {
@@ -73,6 +78,14 @@ function fakeSocketFactory(db: Map<string, string>) {
           const next = cur + delta;
           db.set(args[1], String(next));
           out.push(encodeReply(next));
+        } else if (op === "SADD") {
+          const s = sets.get(args[1]) ?? new Set<string>();
+          const had = s.has(args[2]);
+          s.add(args[2]);
+          sets.set(args[1], s);
+          out.push(encodeReply(had ? 0 : 1));
+        } else if (op === "SMEMBERS") {
+          out.push(encodeReply([...(sets.get(args[1]) ?? new Set<string>())]));
         }
       }
       // Deliver replies asynchronously, like a real socket.
@@ -87,8 +100,8 @@ function fakeSocketFactory(db: Map<string, string>) {
   };
 }
 
-function storeOn(db: Map<string, string>): RedisBudgetStore {
-  return new RedisBudgetStore({ url: "redis://default:pw@localhost:6379", socketFactory: fakeSocketFactory(db) });
+function storeOn(db: Map<string, string>, sets: Map<string, Set<string>> = new Map()): RedisBudgetStore {
+  return new RedisBudgetStore({ url: "redis://default:pw@localhost:6379", socketFactory: fakeSocketFactory(db, sets) });
 }
 
 test("parseRedisUrl: extracts host/port/creds/tls from redis:// and rediss://", () => {
@@ -135,6 +148,19 @@ test("redis store: balance PERSISTS across a fresh store instance (cold-start si
   const dup = await revived.applyDonation("evt-1", 10 * MICRO);
   assert.equal(dup.applied, false);
   assert.equal(dup.balanceMicros, 10 * MICRO);
+});
+
+test("redis store: tracks balances per currency and lists them", async () => {
+  const db = new Map<string, string>();
+  const sets = new Map<string, Set<string>>();
+  const store = storeOn(db, sets);
+  await store.applyDonation("u1", 5 * MICRO, "USD");
+  await store.applyDonation("c1", 1383_000, "CZK"); // 1.383 CZK-micros-ish
+  const balances = await store.getBalances();
+  assert.equal(balances.USD, 5 * MICRO);
+  assert.equal(balances.CZK, 1383_000);
+  assert.equal(await store.getBalanceMicros("USD"), 5 * MICRO);
+  assert.equal(await store.getBalanceMicros("CZK"), 1383_000);
 });
 
 test("redis store: spend debits and hard-stops at zero", async () => {

@@ -66,15 +66,28 @@ test("extractDonation: credits a completed USD capture", () => {
     event_type: "PAYMENT.CAPTURE.COMPLETED",
     resource: { amount: { value: "5.00", currency_code: "USD" } },
   });
-  assert.deepEqual(d, { eventId: "evt-1", amountMicros: 5 * MICRO });
+  assert.deepEqual(d, { eventId: "evt-1", amountMicros: 5 * MICRO, currency: "USD" });
 });
 
-test("extractDonation: ignores non-USD, non-payment, and non-positive amounts", () => {
-  // Non-USD → ignored (we don't mis-convert).
-  assert.equal(
-    extractDonation({ id: "e", event_type: "PAYMENT.CAPTURE.COMPLETED", resource: { amount: { value: "5.00", currency_code: "EUR" } } }),
-    null,
-  );
+test("extractDonation: credits the settled amount in ANY currency (account may be non-USD)", () => {
+  // The founder's PayPal converts USD gifts to CZK; we record the settled CZK
+  // amount as-is rather than dropping it.
+  const czk = extractDonation({
+    id: "evt-czk",
+    event_type: "PAYMENT.CAPTURE.COMPLETED",
+    resource: { amount: { value: "13.83", currency_code: "CZK" } },
+  });
+  assert.deepEqual(czk, { eventId: "evt-czk", amountMicros: Math.round(13.83 * MICRO), currency: "CZK" });
+
+  const eur = extractDonation({
+    id: "evt-eur",
+    event_type: "PAYMENT.CAPTURE.COMPLETED",
+    resource: { amount: { value: "5.00", currency_code: "EUR" } },
+  });
+  assert.deepEqual(eur, { eventId: "evt-eur", amountMicros: 5 * MICRO, currency: "EUR" });
+});
+
+test("extractDonation: ignores non-payment events and non-positive/malformed amounts", () => {
   // Wrong event type → ignored.
   assert.equal(
     extractDonation({ id: "e", event_type: "BILLING.SUBSCRIPTION.CREATED", resource: { amount: { value: "5.00", currency_code: "USD" } } }),
@@ -94,7 +107,7 @@ test("extractDonation: accepts the SALE.COMPLETED shape too", () => {
     event_type: "PAYMENT.SALE.COMPLETED",
     resource: { amount: { total: undefined, value: "12.50", currency: "USD" } },
   });
-  assert.deepEqual(d, { eventId: "evt-2", amountMicros: 12_500_000 });
+  assert.deepEqual(d, { eventId: "evt-2", amountMicros: 12_500_000, currency: "USD" });
 });
 
 // ---------------------------------------------------------------------------
