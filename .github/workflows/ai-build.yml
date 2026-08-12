@@ -1,0 +1,45 @@
+name: AI maintainer build
+
+# Fired by an APPROVED /tally via repository_dispatch. Never runs on push to main.
+on:
+  repository_dispatch:
+    types: [ai-build]
+
+# The workflow may create a branch + PR; it must never merge or deploy.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-feature:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the AI feature-builder
+        id: aibuild
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The approved proposal, passed straight from the dispatch payload.
+          AI_BUILD_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: node --import ./scripts/ts-loader.mjs scripts/ai-build.mjs
+
+      - name: Open a pull request with the AI's changes
+        if: steps.aibuild.outputs.changed_count != '0' && steps.aibuild.outputs.build_passed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ai-build/${{ github.event.client_payload.proposalId }}
+          base: main
+          title: "AI build: ${{ github.event.client_payload.title }}"
+          body-path: AI_BUILD_RESULT.md
+          labels: ai-maintainer
+          # NOTE: this action opens/updates a PR; it never merges. The founder
+          # reviews and merges, per CLAUDE.md. main stays branch-protected.
+          delete-branch: true
