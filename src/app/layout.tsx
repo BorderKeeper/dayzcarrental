@@ -28,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               &copy; 2026 {SITE.name} &middot; A community mockup &middot;{" "}
               <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
             </p>
+            <p className="small">jan is awesome</p>
             <p className="small">
               This is a non-commercial fan project and is <strong>not affiliated with or
               endorsed by Bohemia Interactive</strong>. DayZ is a trademark of Bohemia Interactive
