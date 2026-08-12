@@ -14,11 +14,15 @@
 // if absent) then `INCRBY balance <micros>` ONLY when the SET created the key.
 // A re-delivered event whose key already exists never increments the balance.
 
-import type { BudgetStore } from "./budgetStore";
+import { DEFAULT_CURRENCY, type BudgetStore } from "./budgetStore";
 import { redisPipeline, type SocketFactory } from "./redisClient";
 
-const BALANCE_KEY = "dcr:budget:balance_micros";
+// Balance is per-currency: dcr:budget:balance:<CUR>. A set of seen currencies
+// lets the treasury display enumerate them. Applied-event ids dedupe donations.
+const BALANCE_PREFIX = "dcr:budget:balance:";
+const CURRENCIES_KEY = "dcr:budget:currencies";
 const APPLIED_PREFIX = "dcr:budget:applied:";
+const balKey = (cur: string) => BALANCE_PREFIX + cur;
 
 export interface RedisConfig {
   url: string; // REDIS_URL (redis:// or rediss://)
@@ -52,43 +56,55 @@ export class RedisBudgetStore implements BudgetStore {
     return redisPipeline(this.url, commands, { socketFactory: this.socketFactory });
   }
 
-  async getBalanceMicros(): Promise<number> {
-    const [v] = await this.run(["GET", BALANCE_KEY]);
+  async getBalanceMicros(currency = DEFAULT_CURRENCY): Promise<number> {
+    const [v] = await this.run(["GET", balKey(currency)]);
     const n = Number.parseInt(String(v ?? "0"), 10);
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
 
-  async applyDonation(eventId: string, amountMicros: number): Promise<{ applied: boolean; balanceMicros: number }> {
+  async getBalances(): Promise<Record<string, number>> {
+    const [members] = await this.run(["SMEMBERS", CURRENCIES_KEY]);
+    const currencies: string[] = Array.isArray(members) ? members.map(String) : [];
+    const out: Record<string, number> = {};
+    for (const cur of currencies) out[cur] = await this.getBalanceMicros(cur);
+    return out;
+  }
+
+  async applyDonation(eventId: string, amountMicros: number, currency = DEFAULT_CURRENCY) {
     if (!eventId || !Number.isFinite(amountMicros) || amountMicros <= 0) {
-      return { applied: false, balanceMicros: await this.getBalanceMicros() };
+      return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
     // SET NX → "OK" if it created the key, null if it already existed.
     const [created] = await this.run(["SET", APPLIED_PREFIX + eventId, "1", "NX"]);
     if (created !== "OK") {
-      return { applied: false, balanceMicros: await this.getBalanceMicros() };
+      return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
-    const [newBalance] = await this.run(["INCRBY", BALANCE_KEY, Math.floor(amountMicros)]);
-    return { applied: true, balanceMicros: Number.parseInt(String(newBalance), 10) };
+    const [newBalance] = await this.run(
+      ["INCRBY", balKey(currency), Math.floor(amountMicros)],
+      ["SADD", CURRENCIES_KEY, currency],
+    );
+    return { applied: true, balanceMicros: Number.parseInt(String(newBalance), 10), currency };
   }
 
-  async topUp(amountMicros: number): Promise<number> {
-    if (!Number.isFinite(amountMicros) || amountMicros <= 0) return this.getBalanceMicros();
-    const [newBalance] = await this.run(["INCRBY", BALANCE_KEY, Math.floor(amountMicros)]);
+  async topUp(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<number> {
+    if (!Number.isFinite(amountMicros) || amountMicros <= 0) return this.getBalanceMicros(currency);
+    const [newBalance] = await this.run(
+      ["INCRBY", balKey(currency), Math.floor(amountMicros)],
+      ["SADD", CURRENCIES_KEY, currency],
+    );
     return Number.parseInt(String(newBalance), 10);
   }
 
-  async spend(amountMicros: number): Promise<{ ok: boolean; balanceMicros: number }> {
+  async spend(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<{ ok: boolean; balanceMicros: number }> {
     const cost = Math.ceil(Math.max(0, amountMicros));
-    // Read-check-write. INCRBY/DECRBY are atomic, but "don't cross zero" isn't a
-    // single op without Lua. The only spender (the AI builder, serialized per
-    // build) makes the race window negligible; a DECRBY that crosses zero is
-    // clamped back. Documented tradeoff.
-    const balance = await this.getBalanceMicros();
+    // Read-check-write; the only spender (AI builder) is serialized, so the
+    // race window is negligible; a DECRBY crossing zero is clamped back.
+    const balance = await this.getBalanceMicros(currency);
     if (cost > balance) return { ok: false, balanceMicros: balance };
-    const [after] = await this.run(["DECRBY", BALANCE_KEY, cost]);
+    const [after] = await this.run(["DECRBY", balKey(currency), cost]);
     let n = Number.parseInt(String(after), 10);
     if (n < 0) {
-      await this.run(["SET", BALANCE_KEY, "0"]);
+      await this.run(["SET", balKey(currency), "0"]);
       n = 0;
     }
     return { ok: true, balanceMicros: n };

@@ -20,56 +20,75 @@
 
 import { MICRO, fmtUsd } from "./budget";
 
+// Donations are recorded per currency (the founder's PayPal is CZK-based and
+// PayPal converts USD gifts to it), so the store tracks a micro-units balance
+// keyed by ISO currency code rather than assuming USD. Spend (AI tokens) is a
+// separate USD concern handled by BudgetLedger, not here.
 export interface BudgetStore {
-  // Current balance in micro-USD.
-  getBalanceMicros(): Promise<number>;
-  // Apply a donation exactly once, keyed by the PayPal event id. Returns
-  // whether it was newly applied (false = already seen, no double-credit).
-  applyDonation(eventId: string, amountMicros: number): Promise<{ applied: boolean; balanceMicros: number }>;
+  // Total micro-units held in a given currency (default USD for back-compat).
+  getBalanceMicros(currency?: string): Promise<number>;
+  // All currency balances, ISO code -> micro-units. For the treasury display.
+  getBalances(): Promise<Record<string, number>>;
+  // Apply a donation exactly once, keyed by the PayPal event id. `currency`
+  // defaults to USD. Returns whether it was newly applied (false = already
+  // seen → no double-credit) and the resulting balance for that currency.
+  applyDonation(
+    eventId: string,
+    amountMicros: number,
+    currency?: string,
+  ): Promise<{ applied: boolean; balanceMicros: number; currency: string }>;
   // Founder top-up (seed funding). Not idempotency-keyed; call intentionally.
-  topUp(amountMicros: number): Promise<number>;
-  // Debit for AI spend, hard-stopping at zero (returns false if unaffordable).
-  spend(amountMicros: number): Promise<{ ok: boolean; balanceMicros: number }>;
+  topUp(amountMicros: number, currency?: string): Promise<number>;
+  // Debit for AI spend (USD), hard-stopping at zero (false if unaffordable).
+  spend(amountMicros: number, currency?: string): Promise<{ ok: boolean; balanceMicros: number }>;
 }
+
+export const DEFAULT_CURRENCY = "USD";
 
 // In-memory reference implementation. Deterministic, dependency-free — used by
 // tests and as the interface contract. NOT durable across processes.
 export class InMemoryBudgetStore implements BudgetStore {
-  private balance: number;
+  private balances = new Map<string, number>();
   private appliedEventIds = new Set<string>();
 
-  constructor(openingMicros = 0) {
-    this.balance = Math.max(0, Math.floor(openingMicros));
+  constructor(openingMicros = 0, currency = DEFAULT_CURRENCY) {
+    if (openingMicros > 0) this.balances.set(currency, Math.floor(openingMicros));
   }
 
-  async getBalanceMicros(): Promise<number> {
-    return this.balance;
+  async getBalanceMicros(currency = DEFAULT_CURRENCY): Promise<number> {
+    return this.balances.get(currency) ?? 0;
   }
 
-  async applyDonation(eventId: string, amountMicros: number): Promise<{ applied: boolean; balanceMicros: number }> {
-    if (!eventId) return { applied: false, balanceMicros: this.balance };
-    if (this.appliedEventIds.has(eventId)) {
-      // Already credited this event — idempotent no-op.
-      return { applied: false, balanceMicros: this.balance };
+  async getBalances(): Promise<Record<string, number>> {
+    return Object.fromEntries(this.balances);
+  }
+
+  async applyDonation(eventId: string, amountMicros: number, currency = DEFAULT_CURRENCY) {
+    if (!eventId || !Number.isFinite(amountMicros) || amountMicros <= 0) {
+      return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
-    if (!Number.isFinite(amountMicros) || amountMicros <= 0) {
-      return { applied: false, balanceMicros: this.balance };
+    if (this.appliedEventIds.has(eventId)) {
+      return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
     this.appliedEventIds.add(eventId);
-    this.balance += Math.floor(amountMicros);
-    return { applied: true, balanceMicros: this.balance };
+    const next = (this.balances.get(currency) ?? 0) + Math.floor(amountMicros);
+    this.balances.set(currency, next);
+    return { applied: true, balanceMicros: next, currency };
   }
 
-  async topUp(amountMicros: number): Promise<number> {
-    if (Number.isFinite(amountMicros) && amountMicros > 0) this.balance += Math.floor(amountMicros);
-    return this.balance;
+  async topUp(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<number> {
+    if (Number.isFinite(amountMicros) && amountMicros > 0) {
+      this.balances.set(currency, (this.balances.get(currency) ?? 0) + Math.floor(amountMicros));
+    }
+    return this.getBalanceMicros(currency);
   }
 
-  async spend(amountMicros: number): Promise<{ ok: boolean; balanceMicros: number }> {
+  async spend(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<{ ok: boolean; balanceMicros: number }> {
     const cost = Math.ceil(Math.max(0, amountMicros));
-    if (cost > this.balance) return { ok: false, balanceMicros: this.balance };
-    this.balance -= cost;
-    return { ok: true, balanceMicros: this.balance };
+    const bal = this.balances.get(currency) ?? 0;
+    if (cost > bal) return { ok: false, balanceMicros: bal };
+    this.balances.set(currency, bal - cost);
+    return { ok: true, balanceMicros: bal - cost };
   }
 }
 

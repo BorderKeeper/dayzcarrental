@@ -85,11 +85,16 @@ export async function POST(request: Request) {
   }
 
   const { store, durable } = pickStore();
-  const { applied, balanceMicros } = await store.applyDonation(donation.eventId, donation.amountMicros);
+  const { applied, balanceMicros, currency } = await store.applyDonation(
+    donation.eventId,
+    donation.amountMicros,
+    donation.currency,
+  );
   return NextResponse.json({
     ok: true,
     credited: applied, // false = already applied (idempotent re-delivery)
     durable, // false = in-memory fallback (balance won't persist across cold starts)
-    balance: fmtUsd(balanceMicros),
+    currency,
+    balanceMicros,
   });
 }

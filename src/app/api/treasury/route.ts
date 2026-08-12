@@ -20,18 +20,23 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const upstash = upstashFromEnv();
   const store = upstash ? new RedisBudgetStore(upstash) : new InMemoryBudgetStore(0);
-  let micros = 0;
+  let balances: Record<string, number> = {};
   try {
-    micros = await store.getBalanceMicros();
+    balances = await store.getBalances();
   } catch {
     // Store unreachable → report unknown rather than a misleading 0.
     return NextResponse.json({ ok: false, durable: !!upstash, error: "budget store unavailable" }, { status: 200 });
   }
+  // Human-readable per-currency totals, e.g. { USD: "$1.0000", CZK: "13.8300" }.
+  const display: Record<string, string> = {};
+  for (const [cur, micros] of Object.entries(balances)) {
+    display[cur] = cur === "USD" ? fmtUsd(micros) : (micros / MICRO).toFixed(4);
+  }
   return NextResponse.json({
     ok: true,
     durable: !!upstash,
-    balanceUsd: fmtUsd(micros),
-    balanceMicros: micros,
+    balances: display,
+    balancesMicros: balances,
     note: "AI maintainer upkeep budget, funded by voluntary donations. Not spendable on gameplay.",
   });
 }

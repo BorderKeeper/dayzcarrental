@@ -93,33 +93,47 @@ export async function verifyPaypalWebhook(
   }
 }
 
-// A donation extracted from a verified event.
+// A donation extracted from a verified event. Currency-agnostic: we record the
+// SETTLED amount in whatever currency PayPal reports (the founder's account is
+// CZK-based, and PayPal converts USD donations to it), rather than assuming USD
+// or mis-converting. `micros` is micro-units of `currency`.
 export interface ExtractedDonation {
   eventId: string; // PayPal event id — the idempotency key
-  amountMicros: number; // USD micro-dollars
+  amountMicros: number; // micro-units of `currency` (value * 1e6)
+  currency: string; // ISO code as PayPal reported it, e.g. "USD" | "CZK"
 }
 
-// Extract a USD donation amount from a verified PayPal event. We only credit:
-//   * completed capture/sale events (money actually moved), and
-//   * USD (the ledger is USD micro-dollars; other currencies are ignored here
-//     rather than mis-converted — a deliberate, safe refusal).
-// Returns null if the event isn't a completed USD payment we should credit.
+// Event types that mean "money actually completed moving". PayPal fires
+// different ones depending on the payment path (REST capture vs. checkout sale
+// vs. no-code payment links), so we accept the completed variants.
+const CREDIT_TYPES = new Set([
+  "PAYMENT.CAPTURE.COMPLETED",
+  "PAYMENT.SALE.COMPLETED",
+]);
+
+// Extract the settled donation from a verified PayPal event, in WHATEVER
+// currency PayPal reports (the account may be non-USD and PayPal converts).
+// Returns null only if it's not a completed payment we should credit, or the
+// amount/currency can't be read. Currency is recorded, not converted.
 export function extractDonation(event: any): ExtractedDonation | null {
   const type = event?.event_type;
-  const CREDIT_TYPES = new Set(["PAYMENT.CAPTURE.COMPLETED", "PAYMENT.SALE.COMPLETED"]);
   if (!CREDIT_TYPES.has(type)) return null;
 
-  const amount = event?.resource?.amount;
-  const value = amount?.value; // e.g. "5.00"
-  const currency = amount?.currency_code ?? amount?.currency; // capture vs sale field name
-  if (!value || currency !== "USD") return null;
+  // The amount lives at resource.amount for both capture and sale events;
+  // `currency_code` (capture) or `currency` (sale) carries the ISO code. For a
+  // converted payment PayPal reports the settled amount here in the account's
+  // currency (e.g. CZK).
+  const amount = event?.resource?.amount ?? event?.resource?.seller_receivable_breakdown?.net_amount;
+  const value = amount?.value;
+  const currency = amount?.currency_code ?? amount?.currency;
+  if (!value || !currency) return null;
 
-  const dollars = Number.parseFloat(String(value));
-  if (!Number.isFinite(dollars) || dollars <= 0) return null;
+  const num = Number.parseFloat(String(value));
+  if (!Number.isFinite(num) || num <= 0) return null;
 
   const eventId = String(event?.id ?? "");
   if (!eventId) return null;
 
-  // Round to the nearest micro-dollar (values are 2dp; this is exact).
-  return { eventId, amountMicros: Math.round(dollars * MICRO) };
+  // Micro-units of the reported currency (PayPal values are 2dp; exact).
+  return { eventId, amountMicros: Math.round(num * MICRO), currency: String(currency) };
 }
