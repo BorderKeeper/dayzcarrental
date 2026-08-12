@@ -98,7 +98,7 @@ export async function verifyPaypalWebhook(
 // CZK-based, and PayPal converts USD donations to it), rather than assuming USD
 // or mis-converting. `micros` is micro-units of `currency`.
 export interface ExtractedDonation {
-  eventId: string; // PayPal event id — the idempotency key
+  eventId: string; // idempotency key — the transaction id when PayPal sends one
   amountMicros: number; // micro-units of `currency` (value * 1e6)
   currency: string; // ISO code as PayPal reported it, e.g. "USD" | "CZK"
 }
@@ -131,7 +131,12 @@ export function extractDonation(event: any): ExtractedDonation | null {
   const num = Number.parseFloat(String(value));
   if (!Number.isFinite(num) || num <= 0) return null;
 
-  const eventId = String(event?.id ?? "");
+  // Idempotency key. Prefer the TRANSACTION id (`resource.id` — the capture or
+  // sale id) over the delivery's event id, because the reconciler
+  // (paypalTransactions.ts) sees the same donation as `transaction_id` and must
+  // dedupe against it. Two channels, one key, one credit. Falls back to the
+  // event id for shapes that carry no resource id.
+  const eventId = String(event?.resource?.id ?? event?.id ?? "");
   if (!eventId) return null;
 
   // Micro-units of the reported currency (PayPal values are 2dp; exact).
