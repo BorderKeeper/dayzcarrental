@@ -22,6 +22,7 @@ export * from "./builderTools";
 export * from "./buildLoop";
 export * from "./githubDispatch";
 export * from "./paypalVerify";
+export * from "./paypalTransactions";
 export * from "./budgetStore";
 export * from "./redisClient";
 export * from "./redisBudgetStore";

@@ -83,6 +83,65 @@ our branch → PR → founder-merge flow (see `GUARDRAILS.md`).
 
 ---
 
+## 5. Donations: webhook + nightly reconcile — [you]
+
+Two channels credit the upkeep budget. The **webhook** (`/api/paypal`) is the fast path; the
+**reconciler** (`/api/paypal/reconcile`) is the backstop that catches anything the webhook missed —
+PayPal's delivery lags and no-code pay-link payments don't reliably produce an event. Both key
+idempotency on the PayPal **transaction id**, so a donation seen by both credits **once**.
+
+### 5a. Enable Transaction Search on the PayPal app — [you]
+
+The reconciler reads `GET /v1/reporting/transactions`, which is off by default:
+
+1. <https://developer.paypal.com/dashboard/applications/live> → open the app (the same one the
+   webhook lives on).
+2. Under **Features**, tick **Transaction Search**, then **Save**.
+3. Without this the endpoint returns `502 … 403 (is 'Transaction Search' enabled…)`.
+
+> PayPal takes **up to 3 hours** to publish an executed transaction to this API. A reconcile run
+> right after a donation can legitimately report nothing; the next run picks it up.
+
+### 5b. Set the env vars in Vercel — [you]
+
+Project → **Settings → Environment Variables** (Production):
+
+| Variable | Value |
+| --- | --- |
+| `CRON_SECRET` | a long random string — `openssl rand -hex 32` |
+| `PAYPAL_RECONCILE_DAYS` | optional lookback, default `7`, max `31` |
+
+`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `REDIS_URL` are already set for the webhook; the
+reconciler reuses them. Vercel Cron automatically sends `Authorization: Bearer $CRON_SECRET`.
+**Without `CRON_SECRET` the endpoint 503s** — it fails closed rather than exposing a
+budget-mutating URL. Redeploy after adding it.
+
+### 5c. The schedule — [done] / [you]
+
+`vercel.json` runs it **daily at 04:00 UTC**, which is what the Hobby plan allows (once per day).
+On Pro, tighten it to e.g. `0 */6 * * *`. Confirm it registered under
+project → **Settings → Cron Jobs** after the deploy.
+
+### 5d. Verify — [you]
+
+Dry run first — this reports what it *would* credit and changes nothing:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://dayzcarrental.com/api/paypal/reconcile?dry=1"
+```
+
+Then run it for real (drop `?dry=1`) and check the balance moved:
+
+```bash
+curl https://dayzcarrental.com/api/treasury
+```
+
+The two $1.00 donations from 2026-08-12 should appear as a `USD` balance. Re-running is safe: the
+second run reports them under `alreadyApplied`, not `credited`.
+
+---
+
 ## Known residual (safe to ship)
 
 `npm audit` reports 3 high advisories inside Next 15's transitive deps (`postcss`, `sharp`/libvips).
