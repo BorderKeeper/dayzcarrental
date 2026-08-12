@@ -28,3 +28,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI feature-builder writes this for the PR body; the CI reads it from disk but
+# it must not be committed into the AI's PR branch (keeps AI PRs to the real diff).
+AI_BUILD_RESULT.md
