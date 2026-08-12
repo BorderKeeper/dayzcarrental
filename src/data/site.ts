@@ -6,7 +6,9 @@ export const SITE = {
   tagline: "Community car rentals for DayZ survivors — since 2026",
   // Placeholder links — replace before launch.
   discordInvite: "https://discord.gg/FGWmPeyeTJ",
-  paypalDonate: "https://www.paypal.com/donate/?hosted_button_id=REPLACE_ME",
+  // LIVE PayPal payment link (real money). NEXT_PUBLIC_PAYPAL_DONATE_URL can
+  // override this (e.g. point at a sandbox link for testing).
+  paypalDonate: "https://www.paypal.com/ncp/payment/WE95V8M8MRPG4",
   // Contact shown in the retro footer.
   contactEmail: "ops@dayzcarrental.com",
 };
