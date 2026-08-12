@@ -97,6 +97,8 @@ export async function verifyPaypalWebhook(
 // SETTLED amount in whatever currency PayPal reports (the founder's account is
 // CZK-based, and PayPal converts USD donations to it), rather than assuming USD
 // or mis-converting. `micros` is micro-units of `currency`.
+//
+// The amount is NET of PayPal's fee — see extractDonation() for why.
 export interface ExtractedDonation {
   eventId: string; // idempotency key — the transaction id when PayPal sends one
   amountMicros: number; // micro-units of `currency` (value * 1e6)
@@ -119,17 +121,38 @@ export function extractDonation(event: any): ExtractedDonation | null {
   const type = event?.event_type;
   if (!CREDIT_TYPES.has(type)) return null;
 
-  // The amount lives at resource.amount for both capture and sale events;
-  // `currency_code` (capture) or `currency` (sale) carries the ISO code. For a
-  // converted payment PayPal reports the settled amount here in the account's
-  // currency (e.g. CZK).
-  const amount = event?.resource?.amount ?? event?.resource?.seller_receivable_breakdown?.net_amount;
-  const value = amount?.value;
-  const currency = amount?.currency_code ?? amount?.currency;
+  // Credit the NET amount, not the gross. PayPal's fee (~$0.32 on a $1 gift —
+  // a third of it) never reaches the account, and this balance is a hard
+  // spending ceiling for real AI tokens: crediting gross would authorise spend
+  // the account cannot actually cover. Three shapes, in order of preference:
+  //   1. capture — seller_receivable_breakdown.net_amount is already gross-fee,
+  //   2. sale    — amount.total/value minus transaction_fee,
+  //   3. neither — fall back to the gross amount. Slightly generous beats
+  //      dropping a real donation on the floor.
+  const r = event?.resource;
+  let value: unknown;
+  let currency: unknown;
+  let feeValue = 0;
+
+  const netAmount = r?.seller_receivable_breakdown?.net_amount;
+  if (netAmount?.value && (netAmount.currency_code ?? netAmount.currency)) {
+    value = netAmount.value;
+    currency = netAmount.currency_code ?? netAmount.currency;
+  } else {
+    const amount = r?.amount;
+    value = amount?.value ?? amount?.total;
+    currency = amount?.currency_code ?? amount?.currency;
+    // v1 sale reports the fee separately, as a positive amount to subtract.
+    const parsedFee = Number.parseFloat(String(r?.transaction_fee?.value ?? "0"));
+    if (Number.isFinite(parsedFee)) feeValue = Math.abs(parsedFee);
+  }
   if (!value || !currency) return null;
 
-  const num = Number.parseFloat(String(value));
-  if (!Number.isFinite(num) || num <= 0) return null;
+  const gross = Number.parseFloat(String(value));
+  if (!Number.isFinite(gross)) return null;
+  const num = gross - feeValue;
+  // A donation wholly consumed by fees credits nothing rather than 0 or less.
+  if (num <= 0) return null;
 
   // Idempotency key. Prefer the TRANSACTION id (`resource.id` — the capture or
   // sale id) over the delivery's event id, because the reconciler

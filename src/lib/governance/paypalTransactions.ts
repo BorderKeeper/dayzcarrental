@@ -52,9 +52,17 @@ const PAYMENT_CODE_PREFIX = "T00";
 // One inbound donation as PayPal's ledger records it.
 export interface TransactionDonation {
   transactionId: string; // idempotency key, shared with the webhook path
-  amountMicros: number; // micro-units of `currency` (gross, as received)
+  amountMicros: number; // micro-units of `currency`, NET of PayPal's fee
   currency: string; // ISO code as PayPal reported it, e.g. "USD" | "CZK"
   time: string; // transaction_initiation_date, for the run report
+}
+
+// What a scan actually looked at, so a surprising result is diagnosable: how
+// many ledger rows came back vs how many survived the filters below.
+export interface ScanResult {
+  donations: TransactionDonation[];
+  rowsScanned: number; // every row PayPal returned, across all pages
+  pages: number; // pages actually fetched
 }
 
 // RFC3339 without milliseconds — PayPal rejects some fractional-second forms.
@@ -83,17 +91,28 @@ export function extractDonationsFromTransactions(payload: any): TransactionDonat
     if (!String(info.transaction_event_code ?? "").startsWith(PAYMENT_CODE_PREFIX)) continue;
 
     const amount = info.transaction_amount;
-    const value = Number.parseFloat(String(amount?.value ?? ""));
+    const gross = Number.parseFloat(String(amount?.value ?? ""));
     const currency = amount?.currency_code;
-    if (!Number.isFinite(value) || value <= 0) continue; // inbound money only
+    if (!Number.isFinite(gross) || gross <= 0) continue; // inbound money only
     if (!currency) continue;
 
     const transactionId = String(info.transaction_id ?? "");
     if (!transactionId) continue;
 
+    // Credit NET, matching the webhook path: PayPal reports `fee_amount` as a
+    // NEGATIVE figure alongside the gross, and the fee never lands in the
+    // account. Only subtract a fee denominated in the same currency — a
+    // mismatch means we'd be subtracting CZK from USD.
+    const fee = info.fee_amount;
+    const parsedFee = Number.parseFloat(String(fee?.value ?? "0"));
+    const sameCurrency = !fee?.currency_code || fee.currency_code === currency;
+    const feeValue = Number.isFinite(parsedFee) && sameCurrency ? Math.abs(parsedFee) : 0;
+    const net = gross - feeValue;
+    if (net <= 0) continue; // wholly consumed by fees → nothing to credit
+
     out.push({
       transactionId,
-      amountMicros: Math.round(value * MICRO),
+      amountMicros: Math.round(net * MICRO),
       currency: String(currency),
       time: String(info.transaction_initiation_date ?? ""),
     });
@@ -130,21 +149,28 @@ async function fetchPage(
   return res.json();
 }
 
-// List every creditable donation in the window, following pagination.
+// List every creditable donation in the window, following pagination. Reports
+// the raw row count too: "0 donations out of 0 rows" (an empty window) and
+// "0 out of 40" (rows arrived but every one was filtered) are very different
+// problems, and the caller can't tell them apart from the donations alone.
 export async function listDonations(
   creds: PaypalCreds,
   window: { startDate: string; endDate: string },
-): Promise<TransactionDonation[]> {
+): Promise<ScanResult> {
   const token = await getAccessToken(withWebhookId(creds));
-  const all: TransactionDonation[] = [];
+  const donations: TransactionDonation[] = [];
+  let rowsScanned = 0;
+  let pages = 0;
   let page = 1;
   let totalPages = 1;
   do {
     const payload = await fetchPage(creds, token, window, page);
-    all.push(...extractDonationsFromTransactions(payload));
+    pages++;
+    rowsScanned += Array.isArray(payload?.transaction_details) ? payload.transaction_details.length : 0;
+    donations.push(...extractDonationsFromTransactions(payload));
     const reported = Number.parseInt(String(payload?.total_pages ?? "1"), 10);
     totalPages = Number.isFinite(reported) && reported > 0 ? reported : 1;
     page++;
   } while (page <= totalPages && page <= MAX_PAGES);
-  return all;
+  return { donations, rowsScanned, pages };
 }
