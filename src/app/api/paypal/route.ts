@@ -20,16 +20,22 @@
 import { NextResponse } from "next/server";
 import { verifyPaypalWebhook, extractDonation, type PaypalConfig } from "@/lib/governance/paypalVerify";
 import { InMemoryBudgetStore, type BudgetStore } from "@/lib/governance/budgetStore";
+import { RedisBudgetStore, upstashFromEnv } from "@/lib/governance/redisBudgetStore";
 import { fmtUsd } from "@/lib/governance/budget";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Module-scoped fallback store. NOTE: on serverless this resets per cold start —
-// it exists so the endpoint is functional/testable; production must back this
-// with a durable store (founder action). Kept as a singleton so within one warm
-// instance idempotency at least holds.
-const fallbackStore: BudgetStore = new InMemoryBudgetStore(0);
+// Pick the store: durable Upstash Redis when its env vars are present
+// (survives cold starts, real idempotency), else the in-memory fallback (warm
+// instance only — fine for a sandbox smoke test, not production). Resolved per
+// request so setting the env + redeploying flips it on with no code change.
+function pickStore(): { store: BudgetStore; durable: boolean } {
+  const upstash = upstashFromEnv();
+  if (upstash) return { store: new RedisBudgetStore(upstash), durable: true };
+  return { store: memoryFallback, durable: false };
+}
+const memoryFallback: BudgetStore = new InMemoryBudgetStore(0);
 
 export async function POST(request: Request) {
   const clientId = process.env.PAYPAL_CLIENT_ID;
@@ -78,10 +84,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, credited: false });
   }
 
-  const { applied, balanceMicros } = await fallbackStore.applyDonation(donation.eventId, donation.amountMicros);
+  const { store, durable } = pickStore();
+  const { applied, balanceMicros } = await store.applyDonation(donation.eventId, donation.amountMicros);
   return NextResponse.json({
     ok: true,
     credited: applied, // false = already applied (idempotent re-delivery)
+    durable, // false = in-memory fallback (balance won't persist across cold starts)
     balance: fmtUsd(balanceMicros),
   });
 }

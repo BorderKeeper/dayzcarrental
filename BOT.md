@@ -210,12 +210,14 @@ the raised ceiling — it **cannot** spend past it and **cannot** top itself up.
    subscribed to **`PAYMENT.CAPTURE.COMPLETED`** (and optionally `PAYMENT.SALE.COMPLETED`). Copy the
    generated **Webhook ID** → set `PAYPAL_WEBHOOK_ID` in Vercel. (The endpoint verifies every delivery
    against this id; an unverifiable POST is rejected 401 and credits nothing.)
-3. **Durable store** — ⚠️ the built-in store is **in-memory and resets on every serverless cold
-   start**, so it is fine for a sandbox test but **not** for production. For a real deployment, back
-   the `BudgetStore` interface (`src/lib/governance/budgetStore.ts`) with a durable KV/DB — e.g.
-   **Vercel KV / Upstash Redis** (add via Vercel → Storage) or Postgres. This is a small, well-scoped
-   swap (the interface is 4 methods); it's the one piece that needs a real datastore, and it's the
-   natural next AI-assisted task once you've picked a provider.
+3. **Durable store** — ✅ built (`redisBudgetStore.ts`). The balance is stored in **Upstash Redis**
+   via its REST API (no dependency added). To turn it on: Vercel → **Storage** → add **Upstash Redis**
+   (a.k.a. "KV") → **connect it to the `dayzcarrental` project**. That auto-injects the connection env
+   vars (`KV_REST_API_URL` + `KV_REST_API_TOKEN`, or `UPSTASH_REDIS_REST_URL`/`_TOKEN` — the route
+   accepts either naming). With those present, `/api/paypal` uses the durable store automatically;
+   without them it falls back to an in-memory store (warm-instance only — the response's `durable:
+   false` flags that). Donations are credited idempotently by PayPal event id, so re-delivery never
+   double-credits, and the balance survives cold starts.
 4. **Redeploy.**
 
 **Test (sandbox):** trigger a sandbox donation (or PayPal's webhook simulator) → the `/api/paypal`
