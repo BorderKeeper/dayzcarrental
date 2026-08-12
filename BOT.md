@@ -210,14 +210,16 @@ the raised ceiling — it **cannot** spend past it and **cannot** top itself up.
    subscribed to **`PAYMENT.CAPTURE.COMPLETED`** (and optionally `PAYMENT.SALE.COMPLETED`). Copy the
    generated **Webhook ID** → set `PAYPAL_WEBHOOK_ID` in Vercel. (The endpoint verifies every delivery
    against this id; an unverifiable POST is rejected 401 and credits nothing.)
-3. **Durable store** — ✅ built (`redisBudgetStore.ts`). The balance is stored in **Upstash Redis**
-   via its REST API (no dependency added). To turn it on: Vercel → **Storage** → add **Upstash Redis**
-   (a.k.a. "KV") → **connect it to the `dayzcarrental` project**. That auto-injects the connection env
-   vars (`KV_REST_API_URL` + `KV_REST_API_TOKEN`, or `UPSTASH_REDIS_REST_URL`/`_TOKEN` — the route
-   accepts either naming). With those present, `/api/paypal` uses the durable store automatically;
-   without them it falls back to an in-memory store (warm-instance only — the response's `durable:
-   false` flags that). Donations are credited idempotently by PayPal event id, so re-delivery never
-   double-credits, and the balance survives cold starts.
+3. **Durable store** — ✅ built (`redisBudgetStore.ts` + `redisClient.ts`). The balance is stored in
+   **Redis**, reached over the RESP wire protocol via Node's built-in `net`/`tls` — **no dependency
+   added** (package.json is locked, so we can't `npm install redis`; we speak Redis directly). To turn
+   it on: Vercel → **Storage** → add **Redis** → **connect it to the `dayzcarrental` project**. That
+   injects **`REDIS_URL`** (a `redis://`/`rediss://` connection string with credentials). With it
+   present, `/api/paypal` and `/api/treasury` use the durable store automatically; without it they
+   fall back to an in-memory store (warm-instance only — the response's `durable: false` flags that).
+   Donations are credited idempotently by PayPal event id, so re-delivery never double-credits, and
+   the balance survives cold starts. **Verify it's wired:** `curl https://dayzcarrental.com/api/treasury`
+   should show `"durable": true` after a redeploy.
 4. **Donate button** — ✅ built (`/donate`). The button links to `NEXT_PUBLIC_PAYPAL_DONATE_URL`
    (a PayPal hosted-button / donation link you create in the PayPal dashboard — **sandbox** for
    testing, **live** later). Set it in Vercel; until it's set the page shows a placeholder notice.
