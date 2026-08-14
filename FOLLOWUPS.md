@@ -21,10 +21,9 @@ runs the build, and opens a PR.
 temporarily) → `/tally` → confirm a PR opens with the AI's changes.
 
 **⚠️ Caveats to weigh before running:**
-- **Uncapped spend:** the Actions build path currently runs WITHOUT the budget ledger, so real builds
-  spend Claude tokens uncapped until the donation→budget wiring (item 2) is connected to it. A single
-  build is typically ~$0.20–$2, but a confused run can spend more (bounded only by the 12-iteration
-  cap). Consider a small test proposal first.
+- **~~Uncapped spend~~ — RESOLVED by item 3 (PR #18).** The Actions build path is now bound to the
+  durable donation balance and *refuses to start* without `REDIS_URL`. A single build is typically
+  ~$0.20–$2; it can no longer exceed the donated balance. Still worth a small test proposal first.
 - **Build quality is variable:** first real agentic build may need iteration. The human PR-merge gate
   is the backstop — nothing auto-merges.
 - **Also still needs `GOVERNANCE_QUORUM_OVERRIDE` removed** once real approval testing is done, if it
@@ -101,12 +100,16 @@ Pinned by a test in `spendGuard.test.ts` so the behaviour can't drift silently.
 
 ---
 
-## 5. Three tests fail on Windows [PRE-EXISTING, COSMETIC]
+## 5. Three tests fail on Windows [FIXED]
 
 `lockedPaths: traversal outside root…`, `write_file tool refuses a locked file…`, and
-`buildLoop: implements a compliant change end to end…` assert POSIX paths (`/repo/src/app/page.tsx`)
-and get Windows ones (`F:\repo\src\app\page.tsx`). The **code** is path-correct — only the test
-fixtures assume POSIX. They pass in CI/Linux. Fix by normalising separators in the assertions.
+`buildLoop: implements a compliant change end to end…` asserted POSIX paths
+(`/repo/src/app/page.tsx`) and got Windows ones (`F:\repo\src\app\page.tsx`). The **code** was
+path-correct throughout — only the test fixtures assumed POSIX.
+
+Fixed by building the expectations with the same `node:path` call the code uses (`at()` in
+`builder.test.ts`) instead of hardcoding strings, and making the in-memory fs separator-agnostic.
+The suite is now 76/76 on Windows and unchanged on Linux.
 
 ---
 

@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { resolve, sep } from "node:path";
 
 import { isLockedPath, safeResolveWithinRoot, checkWritable } from "../lockedPaths";
 import { executeTool, type ToolContext, type BuilderFs } from "../builderTools";
@@ -19,6 +20,12 @@ import type { FetchLike } from "../aiClient";
 import type { Proposal } from "../types";
 
 const ROOT = "/repo";
+
+// The code under test resolves paths with node:path, so on Windows "/repo" +
+// "src/app/x.tsx" becomes "C:\repo\src\app\x.tsx". Expectations are built with
+// the same call rather than hardcoded POSIX strings — the assertion we mean is
+// "resolves to that file inside the root", not "produces this literal string".
+const at = (p: string) => resolve(ROOT, p);
 
 // In-memory fs for the builder tools.
 function memFs(seed: Record<string, string> = {}): { fs: BuilderFs; files: Map<string, string> } {
@@ -32,8 +39,9 @@ function memFs(seed: Record<string, string> = {}): { fs: BuilderFs; files: Map<s
       files.set(abs, data);
     },
     async list(abs) {
-      const prefix = abs.endsWith("/") ? abs : abs + "/";
-      return [...files.keys()].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length).split("/")[0]);
+      // Separator-agnostic: keys are whatever node:path produced on this OS.
+      const prefix = abs.endsWith(sep) ? abs : abs + sep;
+      return [...files.keys()].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length).split(sep)[0]);
     },
     async exists(abs) {
       return files.has(abs);
@@ -67,7 +75,7 @@ test("lockedPaths: recognizes locked files, .env, .claude, .github", () => {
 });
 
 test("lockedPaths: traversal outside root is refused; inside is allowed", () => {
-  assert.equal(safeResolveWithinRoot(ROOT, "src/app/page.tsx"), "/repo/src/app/page.tsx");
+  assert.equal(safeResolveWithinRoot(ROOT, "src/app/page.tsx"), at("src/app/page.tsx"));
   assert.equal(safeResolveWithinRoot(ROOT, "../secrets.txt"), null);
   assert.equal(safeResolveWithinRoot(ROOT, "src/../../etc/passwd"), null);
   assert.equal(safeResolveWithinRoot(ROOT, "/etc/passwd"), null);
@@ -90,12 +98,12 @@ test("write_file tool refuses a locked file and never writes it", async () => {
   const denied = await executeTool("write_file", { path: "COMPLIANCE.md", content: "hacked" }, ctx);
   assert.equal(denied.isError, true);
   assert.match(denied.content, /LOCKED/);
-  assert.equal(files.has("/repo/COMPLIANCE.md"), false);
+  assert.equal(files.has(at("COMPLIANCE.md")), false);
   assert.equal(ctx.changedFiles.size, 0);
 
   const ok = await executeTool("write_file", { path: "src/app/x.tsx", content: "ok" }, ctx);
   assert.equal(ok.isError, false);
-  assert.equal(files.get("/repo/src/app/x.tsx"), "ok");
+  assert.equal(files.get(at("src/app/x.tsx")), "ok");
   assert.ok(ctx.changedFiles.has("src/app/x.tsx"));
 });
 
@@ -132,7 +140,7 @@ test("buildLoop: a non-compliant proposal is refused before any model call", asy
 // FULL LOOP against a stubbed Claude: write a file, build, finish
 // ---------------------------------------------------------------------------
 test("buildLoop: implements a compliant change end to end (stubbed model)", async () => {
-  const { fs, files } = memFs({ "/repo/src/app/page.tsx": "old" });
+  const { fs, files } = memFs({ [at("src/app/page.tsx")]: "old" });
 
   // Scripted model: turn 1 → write_file + run_build; turn 2 → done (text only).
   let turn = 0;
@@ -162,7 +170,7 @@ test("buildLoop: implements a compliant change end to end (stubbed model)", asyn
   assert.equal(result.status, "built");
   assert.equal(result.buildPassed, true);
   assert.deepEqual(result.changedFiles, ["src/app/note.tsx"]);
-  assert.equal(files.get("/repo/src/app/note.tsx"), "export const Note = () => null;");
+  assert.equal(files.get(at("src/app/note.tsx")), "export const Note = () => null;");
   assert.match(result.summary, /Done/);
 });
 
