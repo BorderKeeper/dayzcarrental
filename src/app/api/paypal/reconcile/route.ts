@@ -12,6 +12,9 @@
 //   - CRON_SECRET                               (Vercel Cron sends it as a Bearer token)
 //   - REDIS_URL                                 (durable store; required — see below)
 //   - PAYPAL_RECONCILE_DAYS                     (optional lookback, default 7, max 31)
+//   - PAYPAL_FX_<CUR>_USD                       (optional; converts a non-USD
+//                                                donation into the spendable USD
+//                                                balance — see fxRates.ts)
 //
 // Fails closed on every axis: no CRON_SECRET → 503 (never leave a
 // budget-mutating endpoint open), bad token → 401, no durable store → 503,
@@ -22,6 +25,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { listDonations, reconcileWindow, type PaypalCreds } from "@/lib/governance/paypalTransactions";
 import { RedisBudgetStore, upstashFromEnv } from "@/lib/governance/redisBudgetStore";
+import { convertToUsdMicros, creditDonation, fxRatesFromEnv } from "@/lib/governance/fxRates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,17 +83,23 @@ async function handle(request: Request): Promise<NextResponse> {
     );
   }
 
-  // Credit each; `applied: false` means some channel already booked it.
+  // Credit each; `applied: false` means some channel already booked it. A
+  // founder-set PAYPAL_FX_<CUR>_USD rate converts a non-USD donation into the
+  // spendable USD balance; with none set it credits natively, as before.
+  const rates = fxRatesFromEnv();
   const credited: { transactionId: string; currency: string; amountMicros: number; time: string }[] = [];
   let alreadyApplied = 0;
+  let unspendable = 0;
   for (const d of scan.donations) {
     if (dryRun) {
       credited.push(d);
+      if (!convertToUsdMicros(d.amountMicros, d.currency, rates) && d.currency !== "USD") unspendable++;
       continue;
     }
-    const { applied } = await store.applyDonation(d.transactionId, d.amountMicros, d.currency);
-    if (applied) credited.push(d);
+    const credit = await creditDonation(store, d.transactionId, d.amountMicros, d.currency, rates);
+    if (credit.applied) credited.push(d);
     else alreadyApplied++;
+    if (!credit.spendable) unspendable++;
   }
 
   return NextResponse.json({
@@ -101,6 +111,11 @@ async function handle(request: Request): Promise<NextResponse> {
     creditable: scan.donations.length, // …of which these passed the filters
     credited, // …of which these were new (the rest were already applied)
     alreadyApplied,
+    // Donations booked to a currency AI spend can't draw on. Non-zero means a
+    // PAYPAL_FX_<CUR>_USD rate is missing — the treasury holds funds a build
+    // can't use.
+    unspendable,
+    fxRates: rates,
     amountsAre: "net of PayPal fees",
     balancesMicros: await store.getBalances(),
   });

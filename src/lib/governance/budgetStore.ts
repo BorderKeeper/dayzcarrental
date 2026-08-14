@@ -32,11 +32,19 @@ export interface BudgetStore {
   // Apply a donation exactly once, keyed by the PayPal event id. `currency`
   // defaults to USD. Returns whether it was newly applied (false = already
   // seen → no double-credit) and the resulting balance for that currency.
+  // `memo` is stored alongside the idempotency key as a durable audit note —
+  // used to record an FX conversion (fxRates.ts) so the rate that booked a
+  // donation is recoverable later. It never affects the credit itself.
   applyDonation(
     eventId: string,
     amountMicros: number,
     currency?: string,
+    memo?: string,
   ): Promise<{ applied: boolean; balanceMicros: number; currency: string }>;
+  // Read back the audit memo a donation was booked with, or null if that id was
+  // never applied. This is what makes an FX conversion recoverable after the
+  // fact rather than a number that appeared in the balance.
+  getDonationMemo(eventId: string): Promise<string | null>;
   // Founder top-up (seed funding). Not idempotency-keyed; call intentionally.
   topUp(amountMicros: number, currency?: string): Promise<number>;
   // Debit for AI spend (USD), hard-stopping at zero (false if unaffordable).
@@ -49,7 +57,8 @@ export const DEFAULT_CURRENCY = "USD";
 // tests and as the interface contract. NOT durable across processes.
 export class InMemoryBudgetStore implements BudgetStore {
   private balances = new Map<string, number>();
-  private appliedEventIds = new Set<string>();
+  // eventId -> audit memo ("1" when there is nothing to note).
+  private appliedEventIds = new Map<string, string>();
 
   constructor(openingMicros = 0, currency = DEFAULT_CURRENCY) {
     if (openingMicros > 0) this.balances.set(currency, Math.floor(openingMicros));
@@ -63,17 +72,21 @@ export class InMemoryBudgetStore implements BudgetStore {
     return Object.fromEntries(this.balances);
   }
 
-  async applyDonation(eventId: string, amountMicros: number, currency = DEFAULT_CURRENCY) {
+  async applyDonation(eventId: string, amountMicros: number, currency = DEFAULT_CURRENCY, memo = "1") {
     if (!eventId || !Number.isFinite(amountMicros) || amountMicros <= 0) {
       return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
     if (this.appliedEventIds.has(eventId)) {
       return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
-    this.appliedEventIds.add(eventId);
+    this.appliedEventIds.set(eventId, memo);
     const next = (this.balances.get(currency) ?? 0) + Math.floor(amountMicros);
     this.balances.set(currency, next);
     return { applied: true, balanceMicros: next, currency };
+  }
+
+  async getDonationMemo(eventId: string): Promise<string | null> {
+    return this.appliedEventIds.get(eventId) ?? null;
   }
 
   async topUp(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<number> {
