@@ -153,6 +153,61 @@ merged.
 
 ---
 
+## 7. E2E churn-risk audit [REPORT ONLY 2026-08-14 — nothing fixed yet]
+
+Full end-to-end simulation of how real people meet the project: personas walked against the
+**production site** and the **live Discord** (read-only), scripted multi-user conversations driven
+through the real governance/booking code, and a cold-read of all docs. **No code, docs, site or
+Discord content was changed** — this entry is the parked worklist.
+
+Full ranked report: <https://claude.ai/code/artifact/c8c359c9-de03-4048-b3e8-eb1a6f29b844>
+
+**🔴 P0 — live outage, blocks everyone:**
+- **The Discord invite in `src/data/site.ts:8` is expired.** `discord.gg/FGWmPeyeTJ` returns
+  `{"message": "Invite is expired.", "code": 50270}`; a control request to a known-good invite from
+  the same endpoint returns 200. Discord invites default to 7-day expiry and the server was created
+  11 Aug. Every "Join our Discord" button on the live site is dead — which is why the server has
+  **2 members (founder + bot)**. Fix: new invite with *Expire after: Never*, *Max uses: No limit*.
+- **`/tally` is unauthenticated, unlimited and re-fires the AI builder.** An unverified 1-day-old
+  non-author ran it 4× on one proposal → 4 `repository_dispatch` builds, 4 duplicate PRs. No caller
+  check, no idempotency key. Now that the donation balance is funded this is an open faucet into it.
+- **A malformed `DISCORD_ROLE_MAP` silently reports "no quorum" forever.** A typo'd role ID, a
+  capitalised key, bad JSON, or an unset var all produce the byte-identical
+  `No quorum (✅0/❌0/🤷0)` even with 8 valid ✅ votes. The parse error is swallowed; nothing logs.
+
+**🟠 P1 — would make people leave:**
+- Custom-server rent flow is an inescapable trap (reproduced live): picking "Other / not listed"
+  advertises the full fleet, then step 1 has no safehouse to select and Continue fails forever.
+- `/runner` and `/maintainer` send people to **`#runners`/`#maintainers`, which don't exist**; the
+  real channels are role-gated. "Grab the role" contradicts manual-vetting-only role grants.
+- **21 of 24 Discord channels have never had a message**, including `#rent-a-car`.
+- `#verify` says "React with ✅ below" but **no ✅ is seeded on the message** — the only door in.
+- `/donate` is the **only page taking real money and the only page with no mockup notice** — the
+  notice is gated on `includes("REPLACE_ME")`, so it hides exactly when the button becomes real.
+- Main-runner authority is dead: assignments are only ever populated by tests, so a main runner is
+  blocked `needsApprovalBy: "main-runner"` — waiting for herself. Everything escalates to the founder.
+- A renter **forfeits their deposit** if a runner de-stages the car mid-rental.
+- The compliance screener rejects pro-compliance text ("do not remove the disclaimer" → *disclaimer
+  removal*; "no dollars involved, ever" → *real-money rental*; "token economy" → *injection attempt*).
+- No path at all for a **server owner** — the audience that brings players.
+- Donors get no signal: the webhook has never fired, the poller is daily 04:00 UTC.
+- **No mechanism, coded or documented, to replace the dummy servers/fleet/safehouses.**
+- No README/CONTRIBUTING; repo front door reads as prohibitions written at an AI.
+- No code path exists for **factions**, **runner grants**, or **maintenance tickets** — a stuck car,
+  the most common real DayZ problem, has nowhere to go.
+
+**🟡 P2:** treasury renders `$1.4534`; quorum 3 + 7-day gate on an empty server with ballots silently
+dropped; `/propose kind:` is free text with no choices and no `/help`; governance page orphaned from
+nav; live PayPal URL commented "placeholder — replace before launch"; no Discord link on player-facing
+pages; rent flow discards the contact handle (no waitlist despite roadmap); no 404 page; vehicle art
+from the DayZ wiki CDN; audit log written but never read or posted; **`run.sh` can't run on Windows**
+(all 10 files fail before any test; 88/88 green once worked around).
+
+**Also unresolved:** vote-vs-runner conflict has no arbitration — a global vote can silently override
+a main runner on their own server, producing two contradictory PRs.
+
+---
+
 ## Deferred (not started)
 - **Cron auto-tally** — close a vote automatically at its deadline (Vercel Cron) instead of a manual
   `/tally`. Small follow-up.
