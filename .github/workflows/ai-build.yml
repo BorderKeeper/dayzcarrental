@@ -27,14 +27,24 @@ jobs:
         id: aibuild
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Binds the build to the durable donation balance. Without this the
+          # builder refuses to start rather than spend uncapped.
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           # The approved proposal, passed straight from the dispatch payload.
           AI_BUILD_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: node --import ./scripts/ts-loader.mjs scripts/ai-build.mjs
 
       - name: Open a pull request with the AI's changes
-        if: steps.aibuild.outputs.changed_count != '0' && steps.aibuild.outputs.build_passed == 'true'
+        # always() so a refused or failed build still surfaces as a PR, but
+        # guarded on the result file existing: if the builder throws before
+        # writing it (bad key, unreachable Redis), body-path points at nothing
+        # and this step errors on top of the real failure, hiding it.
+        if: always() && hashFiles('AI_BUILD_RESULT.md') != ''
         uses: peter-evans/create-pull-request@v6
         with:
+          # NOT the default GITHUB_TOKEN: a PR opened with it does not trigger
+          # ci.yml, so AI-authored PRs would arrive with no checks at all.
+          token: ${{ secrets.CI_PAT }}
           branch: ai-build/${{ github.event.client_payload.proposalId }}
           base: main
           title: "AI build: ${{ github.event.client_payload.title }}"
