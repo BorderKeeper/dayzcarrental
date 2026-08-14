@@ -84,7 +84,10 @@ export class InMemoryBudgetStore implements BudgetStore {
   }
 
   async spend(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<{ ok: boolean; balanceMicros: number }> {
-    const cost = Math.ceil(Math.max(0, amountMicros));
+    // A non-finite cost must never reach the arithmetic — `bal - NaN` is NaN,
+    // and a NaN balance compares false against every guard, silently disabling
+    // the ceiling this store exists to enforce.
+    const cost = Number.isFinite(amountMicros) ? Math.ceil(Math.max(0, amountMicros)) : 0;
     const bal = this.balances.get(currency) ?? 0;
     if (cost > bal) return { ok: false, balanceMicros: bal };
     this.balances.set(currency, bal - cost);

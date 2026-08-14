@@ -63,6 +63,53 @@ them. Left as-is deliberately — a $0.64 overstatement, recorded here rather th
 
 ---
 
+## 3. Donation budget as a binding ceiling on AI spend [CODE DONE — needs CI secret]
+
+**Status:** Implemented (`spendGuard.ts`, `buildLoop.ts`, `scripts/ai-build.mjs`). Closes the
+uncapped-spend caveat in item 1.
+
+**What changed:** the build loop no longer takes an optional in-memory ledger that nobody passed. It
+takes a `SpendGuard`, and the CI entrypoint binds it to the **durable donation balance** — the same
+Redis store `/api/paypal/reconcile` credits. Every model call is pre-checked against the real
+balance and debited at its true token cost, so a build stops when donations run out.
+
+`scripts/ai-build.mjs` **refuses to run** without `REDIS_URL` rather than building uncapped.
+`AI_BUILD_ALLOW_UNBUDGETED=1` is the deliberate, loudly-logged escape hatch for a smoke test.
+
+**Founder step to activate:** add `REDIS_URL` as a **GitHub Actions repository secret** (it is
+currently only a Vercel env var) and pass it through in `.github/workflows/ai-build.yml` — a locked
+path, so it goes in with the workflow the founder applies by hand. Without it every AI build fails
+closed with a clear message.
+
+---
+
+## 4. Non-USD donations are not spendable [KNOWN LIMITATION]
+
+The budget store holds a balance **per currency**; the spend guard debits **one** currency (USD).
+The founder's PayPal is CZK-based, so if PayPal reports a donation in CZK it lands in a CZK balance
+that AI spend cannot draw on: the treasury shows funds while a build refuses as if broke.
+
+No FX conversion is done **deliberately** — inventing a rate would misstate real money, and a live
+rate means a network dependency inside the money path. Both live donations so far were reported in
+USD, so this is latent, not active.
+
+**Options when it bites:** (a) a founder-set `PAYPAL_FX_<CUR>_USD` rate applied at credit time and
+recorded in the ledger entry, (b) spend from whichever currency has funds and report a
+multi-currency treasury, or (c) convert in PayPal and re-credit. (a) is the smallest honest fix.
+
+Pinned by a test in `spendGuard.test.ts` so the behaviour can't drift silently.
+
+---
+
+## 5. Three tests fail on Windows [PRE-EXISTING, COSMETIC]
+
+`lockedPaths: traversal outside root…`, `write_file tool refuses a locked file…`, and
+`buildLoop: implements a compliant change end to end…` assert POSIX paths (`/repo/src/app/page.tsx`)
+and get Windows ones (`F:\repo\src\app\page.tsx`). The **code** is path-correct — only the test
+fixtures assume POSIX. They pass in CI/Linux. Fix by normalising separators in the assertions.
+
+---
+
 ## Deferred (not started)
 - **Cron auto-tally** — close a vote automatically at its deadline (Vercel Cron) instead of a manual
   `/tally`. Small follow-up.

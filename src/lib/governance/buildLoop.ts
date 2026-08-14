@@ -14,8 +14,10 @@
 //   * LOCKED-FILE REFUSAL — every write goes through checkWritable(); the AI
 //     cannot edit compliance/guardrail/config/CI files or escape the repo root.
 //   * BOUNDED — a hard cap on iterations so a confused model can't loop forever.
-//   * BUDGET-AWARE — optional BudgetLedger; each model call is pre-checked and
-//     its actual token usage debited, so builds stop when donations run out.
+//   * BUDGET-BOUND — a SpendGuard; each model call is pre-checked and its
+//     actual token usage debited, so builds stop when donations run out. In CI
+//     the guard is backed by the DURABLE donation balance (spendGuard.ts), so
+//     the ceiling is real money rather than a per-process counter.
 //
 // No SDK (package.json is locked): raw fetch to the Messages API. The transport,
 // fs, build runner, and clock are all injected → fully unit-testable offline.
@@ -23,7 +25,7 @@
 import type { Proposal } from "./types";
 import { screenProposal } from "./screen";
 import { BUILDER_TOOLS, executeTool, type BuilderFs, type BuildRunner, type ToolContext } from "./builderTools";
-import { BudgetLedger, InsufficientBudgetError } from "./budget";
+import type { SpendGuard } from "./spendGuard";
 import { OPUS_5_PRICING, actualCostMicros, estimateMaxCostMicros, type FetchLike, type ModelPricing } from "./aiClient";
 
 export interface BuildResult {
@@ -40,7 +42,10 @@ export interface BuildLoopOptions {
   fs: BuilderFs;
   runBuild: BuildRunner;
   fetchImpl?: FetchLike;
-  ledger?: BudgetLedger; // optional budget enforcement
+  // Budget enforcement. Optional at the type level so tests can omit it, but
+  // the CI entrypoint (scripts/ai-build.mjs) REFUSES to build without one —
+  // an unbudgeted build spends real money with no ceiling.
+  budget?: SpendGuard;
   maxIterations?: number; // default 12
   maxTokens?: number; // per model call, default 8192
   model?: string;
@@ -106,11 +111,13 @@ export async function runBuildLoop(proposal: Proposal, opts: BuildLoopOptions): 
   let buildPassed = false;
 
   for (let i = 0; i < maxIterations; i++) {
-    // Budget pre-check (worst case), if a ledger is enforcing.
-    if (opts.ledger) {
+    // Budget pre-check (worst case), if a guard is enforcing. Checked BEFORE
+    // the call, against the worst case, so we never start a step we can't pay
+    // for — the debit afterwards is the true cost, which is lower.
+    if (opts.budget) {
       const estIn = estTokens(SYSTEM) + estTokens(JSON.stringify(messages));
       const estimate = estimateMaxCostMicros(estIn, maxTokens, pricing);
-      if (!opts.ledger.canAfford(estimate)) {
+      if (!(await opts.budget.canAfford(estimate))) {
         return {
           status: "budget-exhausted",
           summary: "Stopped: the donation-funded budget can't afford another build step.",
@@ -135,19 +142,16 @@ export async function runBuildLoop(proposal: Proposal, opts: BuildLoopOptions): 
     }
     const data = await res.json();
 
-    // Debit actual usage.
-    if (opts.ledger) {
+    // Debit actual usage. The guard clamps at zero and never throws, so a bad
+    // estimate can't crash a build mid-flight — it just leaves the balance at
+    // zero, and the next pre-check stops the loop.
+    if (opts.budget) {
       const usage = {
         inputTokens: data?.usage?.input_tokens ?? 0,
         outputTokens: data?.usage?.output_tokens ?? 0,
         cacheReadTokens: data?.usage?.cache_read_input_tokens ?? 0,
       };
-      try {
-        opts.ledger.spend(actualCostMicros(usage, pricing), `AI build step (${model})`);
-      } catch (e) {
-        if (!(e instanceof InsufficientBudgetError)) throw e;
-        opts.ledger.spend(opts.ledger.balanceMicros, `AI build step (${model}): partial at zero`);
-      }
+      await opts.budget.spend(actualCostMicros(usage, pricing), `AI build step (${model})`);
     }
 
     const content: any[] = Array.isArray(data?.content) ? data.content : [];

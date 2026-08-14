@@ -24,5 +24,6 @@ export * from "./githubDispatch";
 export * from "./paypalVerify";
 export * from "./paypalTransactions";
 export * from "./budgetStore";
+export * from "./spendGuard";
 export * from "./redisClient";
 export * from "./redisBudgetStore";
