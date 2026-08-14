@@ -12,6 +12,10 @@ export default function RunnerPage() {
   return (
     <div>
       <h1>Become a Runner</h1>
+      <p className="muted">
+        A runner is a volunteer who delivers rental cars to other players in-game and recovers them
+        when the rental ends.
+      </p>
       <DemoNotice>Runners are the boots on the ground — join Discord to get set up on a server.</DemoNotice>
 
       <div className="panel panel--plain">
