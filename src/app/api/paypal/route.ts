@@ -12,6 +12,9 @@
 //   - PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET  (mint the verify token)
 //   - PAYPAL_WEBHOOK_ID                         (binds the signature)
 //   - PAYPAL_ENV = "live" | "sandbox"           (default live)
+//   - PAYPAL_FX_<CUR>_USD                       (optional founder-set rate; converts
+//                                                a non-USD donation into the spendable
+//                                                USD balance — see fxRates.ts)
 //
 // Fails closed: with PayPal not configured it 503s; an unverifiable delivery
 // 401s and credits nothing. Uses an in-memory store by default — a durable
@@ -21,6 +24,7 @@ import { NextResponse } from "next/server";
 import { verifyPaypalWebhook, extractDonation, type PaypalConfig } from "@/lib/governance/paypalVerify";
 import { InMemoryBudgetStore, type BudgetStore } from "@/lib/governance/budgetStore";
 import { RedisBudgetStore, upstashFromEnv } from "@/lib/governance/redisBudgetStore";
+import { creditDonation, fxRatesFromEnv } from "@/lib/governance/fxRates";
 import { fmtUsd } from "@/lib/governance/budget";
 
 export const runtime = "nodejs";
@@ -85,16 +89,25 @@ export async function POST(request: Request) {
   }
 
   const { store, durable } = pickStore();
-  const { applied, balanceMicros, currency } = await store.applyDonation(
+  // Convert to USD when the founder has set a rate for this currency, so a
+  // non-USD donation lands in the balance AI spend actually draws on. With no
+  // rate set this credits natively, exactly as before (see fxRates.ts).
+  const credit = await creditDonation(
+    store,
     donation.eventId,
     donation.amountMicros,
     donation.currency,
+    fxRatesFromEnv(),
   );
   return NextResponse.json({
     ok: true,
-    credited: applied, // false = already applied (idempotent re-delivery)
+    credited: credit.applied, // false = already applied (idempotent re-delivery)
     durable, // false = in-memory fallback (balance won't persist across cold starts)
-    currency,
-    balanceMicros,
+    currency: credit.currency,
+    balanceMicros: credit.balanceMicros,
+    convertedFrom: credit.conversion, // null = credited in its own currency
+    // false = credited to a currency the AI budget can't spend; set
+    // PAYPAL_FX_<CUR>_USD to make it spendable.
+    spendable: credit.spendable,
   });
 }

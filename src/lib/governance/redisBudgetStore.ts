@@ -70,12 +70,14 @@ export class RedisBudgetStore implements BudgetStore {
     return out;
   }
 
-  async applyDonation(eventId: string, amountMicros: number, currency = DEFAULT_CURRENCY) {
+  async applyDonation(eventId: string, amountMicros: number, currency = DEFAULT_CURRENCY, memo = "1") {
     if (!eventId || !Number.isFinite(amountMicros) || amountMicros <= 0) {
       return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
-    // SET NX → "OK" if it created the key, null if it already existed.
-    const [created] = await this.run(["SET", APPLIED_PREFIX + eventId, "1", "NX"]);
+    // SET NX → "OK" if it created the key, null if it already existed. The
+    // VALUE is the audit memo (an FX conversion, say); only the key's existence
+    // gates the credit, so this stays compatible with keys written as "1".
+    const [created] = await this.run(["SET", APPLIED_PREFIX + eventId, memo, "NX"]);
     if (created !== "OK") {
       return { applied: false, balanceMicros: await this.getBalanceMicros(currency), currency };
     }
@@ -84,6 +86,12 @@ export class RedisBudgetStore implements BudgetStore {
       ["SADD", CURRENCIES_KEY, currency],
     );
     return { applied: true, balanceMicros: Number.parseInt(String(newBalance), 10), currency };
+  }
+
+  async getDonationMemo(eventId: string): Promise<string | null> {
+    if (!eventId) return null;
+    const [v] = await this.run(["GET", APPLIED_PREFIX + eventId]);
+    return v == null ? null : String(v);
   }
 
   async topUp(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<number> {

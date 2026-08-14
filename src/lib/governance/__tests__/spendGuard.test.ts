@@ -81,13 +81,16 @@ test("the guard never credits — it has no path to raise a balance", async () =
 // ---------------------------------------------------------------------------
 // CURRENCY: the known limitation, pinned so it can't drift silently
 // ---------------------------------------------------------------------------
-test("a guard spends only its own currency — CZK donations don't fund USD spend", async () => {
+test("a guard spends only its own currency — a CZK balance doesn't fund USD spend", async () => {
   const store = new InMemoryBudgetStore(0);
   await store.applyDonation("TXN-CZK", 100 * MICRO, "CZK");
 
   const usd = storeGuard(store, "USD");
   assert.equal(await usd.balance(), 0);
-  assert.equal(await usd.canAfford(1), false, "no FX conversion is invented — see FOLLOWUPS.md item 4");
+  // The guard itself never converts. Conversion is a deliberate, founder-set
+  // act applied at CREDIT time (fxRates.ts) — by the time money reaches a
+  // guard, the currency question is already settled.
+  assert.equal(await usd.canAfford(1), false, "the guard invents no FX rate of its own");
 
   const czk = storeGuard(store, "CZK");
   assert.equal(await czk.balance(), 100 * MICRO);

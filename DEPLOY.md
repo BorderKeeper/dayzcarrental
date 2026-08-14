@@ -143,6 +143,29 @@ curl https://dayzcarrental.com/api/treasury
 The two $1.00 donations from 2026-08-12 should appear as a `USD` balance. Re-running is safe: the
 second run reports them under `alreadyApplied`, not `credited`.
 
+### 5e. Non-USD donations: set a conversion rate — [you, only if needed]
+
+The balance is held **per currency**, and AI spend draws on the **USD** one. Your PayPal is
+CZK-based, so if PayPal ever reports a donation in CZK it lands in a CZK balance the AI budget
+cannot spend — the treasury shows funds while a build refuses as if broke. Both live donations so
+far were reported in USD, so this may never bite.
+
+To make a currency spendable, set **one env var per currency**:
+
+| Variable | Value |
+| --- | --- |
+| `PAYPAL_FX_CZK_USD` | how many **USD one CZK is worth**, e.g. `0.0435` |
+
+The name reads *from → to*: `PAYPAL_FX_CZK_USD` means "multiply the CZK amount by this to get USD".
+**Get the direction right** — `23` (CZK per USD) instead of `0.0435` would inflate the AI spending
+ceiling ~500×. Values that are non-numeric, zero, negative, or above `100` are ignored rather than
+applied, so a typo falls back to the old behaviour instead of misstating money.
+
+Nothing converts until you set a rate. Once set, `/api/paypal/reconcile` reports `unspendable: 0`
+and echoes the `fxRates` it used; each converted credit records its rate, readable later via the
+donation's transaction id. The rate is **not** live — it is whatever you typed, so revisit it if it
+drifts far from the real one.
+
 ---
 
 ## Known residual (safe to ship)

@@ -83,21 +83,29 @@ closed with a clear message.
 
 ---
 
-## 4. Non-USD donations are not spendable [KNOWN LIMITATION]
+## 4. Non-USD donations are not spendable [CODE DONE — inert until a rate is set]
 
-The budget store holds a balance **per currency**; the spend guard debits **one** currency (USD).
-The founder's PayPal is CZK-based, so if PayPal reports a donation in CZK it lands in a CZK balance
-that AI spend cannot draw on: the treasury shows funds while a build refuses as if broke.
+**Was:** the budget store holds a balance **per currency**; the spend guard debits **one** (USD).
+The founder's PayPal is CZK-based, so a donation PayPal reported in CZK landed in a CZK balance AI
+spend couldn't draw on — the treasury showing funds while a build refused as if broke.
 
-No FX conversion is done **deliberately** — inventing a rate would misstate real money, and a live
-rate means a network dependency inside the money path. Both live donations so far were reported in
-USD, so this is latent, not active.
+**Now:** option (a) from the original write-up is implemented (`fxRates.ts`). A founder-set
+`PAYPAL_FX_<CUR>_USD` rate is applied at **credit time** in both channels (webhook + reconciler),
+and the rate that booked each donation is recorded with its idempotency key — readable afterwards
+via `getDonationMemo(transactionId)`. No live rate, deliberately: that would put a network
+dependency and a silent failure mode inside the money path.
 
-**Options when it bites:** (a) a founder-set `PAYPAL_FX_<CUR>_USD` rate applied at credit time and
-recorded in the ledger entry, (b) spend from whichever currency has funds and report a
-multi-currency treasury, or (c) convert in PayPal and re-credit. (a) is the smallest honest fix.
+**Inert until activated.** With no rate set nothing converts and donations credit natively, exactly
+as before. See `DEPLOY.md` §5e for the founder step; a rate that is malformed, zero, negative, or
+implausible (>100 USD per unit) is ignored rather than applied.
 
-Pinned by a test in `spendGuard.test.ts` so the behaviour can't drift silently.
+**⚠️ What the code cannot catch:** an **inverted** rate — `23` (CZK per USD) instead of `0.0435` —
+looks plausible and would inflate the AI spending ceiling ~500×. The env var name carries the
+direction and every conversion is echoed in the API response, but the founder is the check here.
+
+**Still open — the historical CZK case:** if a donation was already credited to a CZK balance before
+a rate existed, setting one does **not** retroactively convert it; the idempotency key is spent. It
+would need a deliberate one-off `topUp`. Not currently the case — no CZK donation has landed.
 
 ---
 
