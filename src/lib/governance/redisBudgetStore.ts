@@ -96,7 +96,9 @@ export class RedisBudgetStore implements BudgetStore {
   }
 
   async spend(amountMicros: number, currency = DEFAULT_CURRENCY): Promise<{ ok: boolean; balanceMicros: number }> {
-    const cost = Math.ceil(Math.max(0, amountMicros));
+    // A non-finite cost would reach Redis as the literal "NaN" and corrupt the
+    // stored balance for good; debit nothing instead.
+    const cost = Number.isFinite(amountMicros) ? Math.ceil(Math.max(0, amountMicros)) : 0;
     // Read-check-write; the only spender (AI builder) is serialized, so the
     // race window is negligible; a DECRBY crossing zero is clamped back.
     const balance = await this.getBalanceMicros(currency);

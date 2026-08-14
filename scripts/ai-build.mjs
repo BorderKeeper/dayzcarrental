@@ -13,8 +13,16 @@
 // bundler-style imports in src/lib/governance resolve to their .ts files:
 //   node --import ./scripts/ts-loader.mjs scripts/ai-build.mjs
 //
-// Secrets come from the Actions environment (ANTHROPIC_API_KEY). No secret is
-// read from or written to the repo.
+// Secrets come from the Actions environment (ANTHROPIC_API_KEY, REDIS_URL). No
+// secret is read from or written to the repo.
+//
+// BUDGET: this build spends real money, so it refuses to start unless it can
+// bind itself to the durable donation balance (REDIS_URL — the same store
+// /api/paypal and /api/paypal/reconcile credit). Every model call is
+// pre-checked against that balance and debited at its true cost, so a build
+// stops when donations run out instead of billing the founder's card.
+// AI_BUILD_ALLOW_UNBUDGETED=1 is the deliberate escape hatch for a smoke test;
+// it logs loudly and is never the default.
 
 import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -22,6 +30,8 @@ import { dirname, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 import { runBuildLoop } from "../src/lib/governance/buildLoop.ts";
+import { storeGuard, describeSpend } from "../src/lib/governance/spendGuard.ts";
+import { RedisBudgetStore, redisUrlFromEnv } from "../src/lib/governance/redisBudgetStore.ts";
 
 const ROOT = resolve(process.cwd());
 
@@ -69,12 +79,40 @@ function runBuild() {
   });
 }
 
+// Bind the build to the donation balance. Fails closed: without a durable
+// store there is no ceiling, and an uncapped agentic build is exactly the risk
+// the budget exists to remove.
+async function resolveBudget() {
+  const url = redisUrlFromEnv(process.env);
+  if (url) {
+    const guard = storeGuard(new RedisBudgetStore({ url }));
+    const balance = await guard.balance(); // fail fast if the store is unreachable
+    console.log(`Budget: ${(balance / 1_000_000).toFixed(4)} ${guard.currency} of donated funds available.`);
+    return guard;
+  }
+  if (process.env.AI_BUILD_ALLOW_UNBUDGETED === "1") {
+    console.warn(
+      "⚠️  UNBUDGETED BUILD: no REDIS_URL, and AI_BUILD_ALLOW_UNBUDGETED=1 is set. " +
+        "This build will spend Claude tokens with NO ceiling. Intended for a one-off smoke test only.",
+    );
+    return undefined;
+  }
+  throw new Error(
+    "REDIS_URL is missing, so this build cannot be bound to the donation budget and would spend " +
+      "uncapped. Set REDIS_URL (the store /api/paypal credits), or set AI_BUILD_ALLOW_UNBUDGETED=1 " +
+      "to deliberately run without a ceiling.",
+  );
+}
+
 async function main() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY env var is missing.");
   const proposal = readProposal();
+  const budget = await resolveBudget();
 
-  const result = await runBuildLoop(proposal, { apiKey, root: ROOT, fs, runBuild });
+  const result = await runBuildLoop(proposal, { apiKey, root: ROOT, fs, runBuild, budget });
+  const spendLine = budget ? await describeSpend(budget) : "Unbudgeted build — no spend ceiling was enforced.";
+  console.log(spendLine);
 
   // Emit a summary for the workflow to put in the PR body + decide next steps.
   // GITHUB_OUTPUT is the Actions mechanism for step outputs.
@@ -82,6 +120,7 @@ async function main() {
     `status=${result.status}`,
     `build_passed=${result.buildPassed}`,
     `changed_count=${result.changedFiles.length}`,
+    `spent_micros=${budget ? budget.totalSpentMicros() : 0}`,
   ].join("\n");
   if (process.env.GITHUB_OUTPUT) {
     await writeFile(process.env.GITHUB_OUTPUT, summary + "\n", { flag: "a" });
@@ -90,7 +129,7 @@ async function main() {
   await writeFile(
     resolve(ROOT, "AI_BUILD_RESULT.md"),
     `## AI maintainer build result\n\n**Status:** ${result.status}\n**Build passed:** ${result.buildPassed}\n\n` +
-      `**Proposal:** ${proposal.title}\n\n${result.summary}\n\n` +
+      `**Proposal:** ${proposal.title}\n\n${result.summary}\n\n**Budget:** ${spendLine}\n\n` +
       (result.reasons?.length ? `**Refusal reasons:**\n${result.reasons.map((r) => `- ${r}`).join("\n")}\n\n` : "") +
       `**Changed files:**\n${result.changedFiles.map((f) => `- ${f}`).join("\n") || "(none)"}\n`,
     "utf8",

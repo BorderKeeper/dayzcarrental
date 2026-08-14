@@ -13,6 +13,7 @@ import { isLockedPath, safeResolveWithinRoot, checkWritable } from "../lockedPat
 import { executeTool, type ToolContext, type BuilderFs } from "../builderTools";
 import { runBuildLoop } from "../buildLoop";
 import { BudgetLedger } from "../budget";
+import { ledgerGuard } from "../spendGuard";
 import { dispatchAiBuild } from "../githubDispatch";
 import type { FetchLike } from "../aiClient";
 import type { Proposal } from "../types";
@@ -202,7 +203,14 @@ test("buildLoop: stops when the budget can't afford the next step", async () => 
   };
   const result = await runBuildLoop(
     { id: "p3", authorId: "x", actionKind: "content-edit", title: "tiny", rawBody: "tiny" },
-    { apiKey: "k", root: ROOT, fs, runBuild: async () => ({ ok: true, output: "" }), fetchImpl, ledger },
+    {
+      apiKey: "k",
+      root: ROOT,
+      fs,
+      runBuild: async () => ({ ok: true, output: "" }),
+      fetchImpl,
+      budget: ledgerGuard(ledger),
+    },
   );
   assert.equal(result.status, "budget-exhausted");
   assert.equal(called, false, "no model call when the budget can't afford it");
