@@ -124,21 +124,32 @@ The suite is now 76/76 on Windows and unchanged on Linux.
 
 ---
 
-## 6. No CI on pull requests [PROPOSED — founder applies]
+## 6. CI gate on pull requests [APPLIED 2026-08-14 — one settings step left]
 
-`ai-build.yml` is the only workflow and fires on `repository_dispatch`, never on a PR — so the test
-suite and `npm run build` have **never run automatically on any PR**, including the AI-authored ones.
-The trust model constrains what the AI *can do* (locked files, compliance screening, spend ceiling)
-but nothing checks that what it produced **works**. `protect-main` has no status check to require.
+**Was:** `ai-build.yml` was the only workflow and fired on `repository_dispatch`, never on a PR — so
+the test suite and `npm run build` had **never run automatically on any PR**. The trust model
+constrained what the AI *can do* (locked files, compliance screening, spend ceiling) but nothing
+checked that what it produced **works**.
 
-Written up in **`CI.proposal.md`** (locked path — `.github/**`). It covers three things: the new
-`ci.yml`, the `REDIS_URL` line still missing from `ai-build.yml`, and making `verify` a required
-check in the ruleset.
+**Now:** `.github/workflows/ci.yml` runs the governance suite + build on every PR into `main` and on
+`main` itself, with `permissions: contents: read` and no secrets in scope. Applied by the founder by
+hand — `.github/**` is locked. `AI_BUILD_RESULT.md` stays gitignored, so it serves as the PR body
+without entering the diff.
 
-**⚠️ The non-obvious part:** GitHub won't start a workflow from an event raised by the default
-`GITHUB_TOKEN`, so PRs opened by `ai-build.yml` would arrive with **no CI run** — the gate inverted,
-skipping exactly the PRs it exists for. `create-pull-request` needs a separate `CI_PAT`. Details in
-the proposal.
+**Two things `ai-build.yml` needed at the same time:**
+- `REDIS_URL` passed to the builder step — the last activation step of item 3. AI builds no longer
+  fail closed.
+- `token: ${{ secrets.CI_PAT }}` on `create-pull-request`. GitHub won't start a workflow from an
+  event raised by the default `GITHUB_TOKEN`, so without a separate PAT the AI-authored PRs — the
+  ones this gate exists for — would arrive with **no CI run at all**, gate inverted.
+- The PR step is `if: always() && hashFiles('AI_BUILD_RESULT.md') != ''`: a refused or failed build
+  still surfaces as a PR, but an early throw (unreachable Redis, bad key) doesn't turn into a
+  confusing `body-path` error that masks the real cause.
+
+**⚠️ Still to do — the check is not yet a gate.** `protect-main` has rules `deletion`,
+`non_fast_forward`, `pull_request` and **0 bypass actors**, but no `required_status_checks`. Until
+`verify` is added there (Settings → Rules → `protect-main`), CI reports and a red build can still be
+merged.
 
 ---
 
