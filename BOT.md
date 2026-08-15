@@ -144,6 +144,23 @@ instead of `server-add` fails, and the error can only tell you after the fact. T
 the valid kinds if an unknown one reaches it (via an older client, say). Disabled action kinds are
 never offered, since no vote could approve them.
 
+### Work the leads [you]
+
+`#rent-a-car`, `#donate-a-car` and `/list-your-server` all promise that a runner will get in touch.
+That promise is only true if somebody reads the list.
+
+```bash
+REDIS_URL=... node --import ./scripts/ts-loader.mjs scripts/intake.mjs
+REDIS_URL=... node --import ./scripts/ts-loader.mjs scripts/intake.mjs rental-interest --done 1
+```
+
+Oldest first — the top of the list is whoever has been waiting longest. `--done <n>` removes an
+entry once you've replied, so it works as a queue rather than an ever-growing pile.
+
+> **There is deliberately no web page for this.** A public list of players who want to rent, with
+> their Discord handles, is a gift to anyone scraping — so the only way in needs `REDIS_URL`. For
+> the same reason, don't paste the output into a channel, an issue, or a screenshot.
+
 ### Seed the empty channels [you]
 
 21 of 24 channels had never had a message in them, including `#rent-a-car`, whose own topic promises
