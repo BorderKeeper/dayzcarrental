@@ -51,8 +51,25 @@ actually banked, not gross.
 **⚠️ Known-open: the webhook itself has never fired.** Live donations only ever arrived via the
 reconciler; the Webhook Events log stayed empty. Unresolved suspects: `PAYPAL_WEBHOOK_ID` not
 matching `16M39581132446341`, or `PAYPAL_CLIENT_ID` belonging to a different app than the one owning
-that webhook (`GET /v1/notifications/webhooks` with those creds answers both). Not urgent — the
-poller makes the balance correct regardless — but the fast path is worth recovering.
+that webhook. Not urgent — the poller makes the balance correct regardless — but the fast path is
+worth recovering, and a donor currently waits up to ~24h to see their donation land.
+
+**To diagnose it, run:**
+
+```bash
+PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... PAYPAL_WEBHOOK_ID=... \
+  node scripts/paypal-doctor.mjs https://dayzcarrental.com/api/paypal
+```
+
+Read-only; creates nothing, prints no secrets. It checks the six ways this setup can silently do
+nothing: credentials valid for the environment, which webhooks *this app* owns (the call that
+settles both suspects above), whether `PAYPAL_WEBHOOK_ID` names one of them, whether it subscribes
+to the two events we credit, whether the notification URL matches the deployment, and what PayPal
+has actually attempted to deliver in the last 30 days.
+
+The last check is the decisive one: an **empty** delivery log means PayPal never tried, pointing at
+the wrong-app theory; **non-`SUCCESS`** entries mean it tried and we rejected it, pointing at a
+`PAYPAL_WEBHOOK_ID` mismatch failing signature verification and answering 401.
 
 **Historical note:** the first two donations were credited **gross** ($2.00) before the switch to
 net; the true banked figure was $1.36. Their idempotency keys are set, so re-running won't correct

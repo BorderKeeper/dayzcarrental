@@ -13,7 +13,7 @@
 import type { Member, Proposal, Vote, Outcome, Decision, Tally } from "./types";
 import { screenProposal } from "./screen";
 import { tallyVotes, tallyPasses } from "./vote";
-import { findAction } from "./config";
+import { findAction, effectiveQuorum } from "./config";
 import { AuditLog } from "./audit";
 
 export interface RunOptions {
@@ -109,8 +109,17 @@ export class GovernanceEngine {
         return `Approved (${votes}). Action queued as ${effect} for the founder to merge. No money moves, nothing deploys.${excluded}`;
       case "rejected":
         return `Rejected (${votes}). Status quo stands.${excluded}`;
-      case "no-quorum":
-        return `No quorum (${votes}). Not enough eligible voters; re-run when more weigh in.${excluded}`;
+      case "no-quorum": {
+        // "re-run when more weigh in" left people guessing how many more, on a
+        // server that may not yet HAVE that many eligible voters (F-02). Say
+        // the number, and say that abstains don't count toward it.
+        const need = effectiveQuorum();
+        const short = need - t.eligibleBallots;
+        return (
+          `No quorum (${votes}). Needs ${need} eligible ✅/❌ ballot${need === 1 ? "" : "s"} ` +
+          `and got ${t.eligibleBallots} — ${short} more to go. 🤷 doesn't count toward quorum.${excluded}`
+        );
+      }
       case "founder-vetoed":
         return `Founder veto (${votes}). Overridden regardless of tally.`;
       case "dead-on-arrival":
