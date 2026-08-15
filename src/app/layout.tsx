@@ -26,6 +26,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className="footer">
             <p>
               &copy; 2026 {SITE.name} &middot; A community mockup &middot;{" "}
+              <a href={SITE.discordInvite} target="_blank" rel="noopener noreferrer">
+                Join our Discord
+              </a>{" "}
+              &middot; <Link href="/sandbox">Try the sample version</Link> &middot;{" "}
               <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
             </p>
             <p className="small">

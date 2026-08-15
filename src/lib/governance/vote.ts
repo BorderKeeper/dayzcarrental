@@ -9,19 +9,29 @@
 // Pure functions over explicit inputs — no clocks, no I/O — so outcomes are
 // deterministic and testable.
 
-import type { Member, Vote, Tally, Ballot } from "./types";
+import type { Member, Vote, Tally, TallyExclusions, Ballot } from "./types";
 import { GOVERNANCE, effectiveQuorum } from "./config";
 
-// Is a member eligible to have their ballot counted at all?
-export function isEligible(m: Member | undefined): boolean {
-  if (!m) return false;
+export type IneligibilityReason = "unknown-member" | "unverified" | "account-too-young";
+
+// Why this member's ballot can't count — or null if it can. Returning the
+// reason (rather than a bare boolean) is what lets a tally explain itself: a
+// vote that failed because eight people weren't @Verified must not look like a
+// vote nobody turned up to.
+export function ineligibilityReason(m: Member | undefined): IneligibilityReason | null {
+  if (!m) return "unknown-member";
   const { requireVerified, minAccountAgeDays } = GOVERNANCE.eligibility;
   // Founder is always eligible (final say regardless). Everyone else must clear
   // the @Verified + account-age gate.
-  if (m.roles.includes("founder")) return true;
-  if (requireVerified && !m.roles.includes("verified")) return false;
-  if (m.accountAgeDays < minAccountAgeDays) return false;
-  return true;
+  if (m.roles.includes("founder")) return null;
+  if (requireVerified && !m.roles.includes("verified")) return "unverified";
+  if (m.accountAgeDays < minAccountAgeDays) return "account-too-young";
+  return null;
+}
+
+// Is a member eligible to have their ballot counted at all?
+export function isEligible(m: Member | undefined): boolean {
+  return ineligibilityReason(m) === null;
 }
 
 // Reduce a set of votes to a tally, counting only eligible members. Later
@@ -29,10 +39,25 @@ export function isEligible(m: Member | undefined): boolean {
 // reaction is a member's single current choice, not an append log).
 export function tallyVotes(votes: Vote[], members: Map<string, Member>): Tally {
   const latest = new Map<string, Ballot>();
+  // Excluded voters are tracked per unique member, not per ballot — one person
+  // reacting with three emoji is one excluded person, not three.
+  const excludedBy = new Map<string, IneligibilityReason>();
   for (const v of votes) {
     const m = members.get(v.memberId);
-    if (!isEligible(m)) continue; // ineligible ballots are silently dropped
+    const reason = ineligibilityReason(m);
+    if (reason) {
+      excludedBy.set(v.memberId, reason);
+      continue;
+    }
     latest.set(v.memberId, v.ballot);
+  }
+
+  const excluded: TallyExclusions = { total: 0, unverified: 0, tooYoung: 0, unknown: 0 };
+  for (const reason of excludedBy.values()) {
+    excluded.total++;
+    if (reason === "unverified") excluded.unverified++;
+    else if (reason === "account-too-young") excluded.tooYoung++;
+    else excluded.unknown++;
   }
 
   let approve = 0;
@@ -48,7 +73,7 @@ export function tallyVotes(votes: Vote[], members: Map<string, Member>): Tally {
   const quorumMet = eligibleBallots >= effectiveQuorum();
   const approvalRatio = eligibleBallots === 0 ? 0 : approve / eligibleBallots;
 
-  return { approve, reject, abstain, eligibleBallots, quorumMet, approvalRatio };
+  return { approve, reject, abstain, eligibleBallots, quorumMet, approvalRatio, excluded };
 }
 
 // Does a tally pass on its own (before founder override)?

@@ -10,7 +10,7 @@
 // deploy actions are disabled at the allowlist (config.ts), so a passed vote
 // can never move money or ship — matching CLAUDE.md rule 4 and ROADMAP.md.
 
-import type { Member, Proposal, Vote, Outcome, Decision } from "./types";
+import type { Member, Proposal, Vote, Outcome, Decision, Tally } from "./types";
 import { screenProposal } from "./screen";
 import { tallyVotes, tallyPasses } from "./vote";
 import { findAction } from "./config";
@@ -61,7 +61,11 @@ export class GovernanceEngine {
     const tally = tallyVotes(votes, this.members);
     this.audit.append(
       "vote-tallied",
-      `✅${tally.approve} ❌${tally.reject} 🤷${tally.abstain} (quorum ${tally.quorumMet ? "met" : "NOT met"})`,
+      `✅${tally.approve} ❌${tally.reject} 🤷${tally.abstain} (quorum ${tally.quorumMet ? "met" : "NOT met"})` +
+        (tally.excluded.total > 0
+          ? ` — ${tally.excluded.total} excluded (${tally.excluded.unverified} unverified, ` +
+            `${tally.excluded.tooYoung} too young, ${tally.excluded.unknown} unknown)`
+          : ""),
       { proposalId: proposal.id },
     );
 
@@ -96,19 +100,38 @@ export class GovernanceEngine {
     return { proposalId: proposal.id, decision, tally, screen, effect, summary };
   }
 
-  private summarize(decision: Decision, t: { approve: number; reject: number; abstain: number }, effect: string): string {
+
+  private summarize(decision: Decision, t: Tally, effect: string): string {
     const votes = `✅${t.approve}/❌${t.reject}/🤷${t.abstain}`;
+    const excluded = excludedNote(t);
     switch (decision) {
       case "approved":
-        return `Approved (${votes}). Action queued as ${effect} for the founder to merge. No money moves, nothing deploys.`;
+        return `Approved (${votes}). Action queued as ${effect} for the founder to merge. No money moves, nothing deploys.${excluded}`;
       case "rejected":
-        return `Rejected (${votes}). Status quo stands.`;
+        return `Rejected (${votes}). Status quo stands.${excluded}`;
       case "no-quorum":
-        return `No quorum (${votes}). Not enough eligible voters; re-run when more weigh in.`;
+        return `No quorum (${votes}). Not enough eligible voters; re-run when more weigh in.${excluded}`;
       case "founder-vetoed":
         return `Founder veto (${votes}). Overridden regardless of tally.`;
       case "dead-on-arrival":
         return `Dead on arrival.`;
     }
   }
+}
+
+// Spell out ballots that were cast but not counted. Silence here is the failure
+// mode E-02 describes: a misconfigured role map makes every voter resolve as
+// unverified, the tally reads "No quorum (✅0/❌0/🤷0)", and it is indis-
+// tinguishable from nobody caring. If people voted and weren't counted, say so.
+function excludedNote(t: Tally): string {
+  if (t.excluded.total === 0) return "";
+  const parts: string[] = [];
+  if (t.excluded.unverified > 0) parts.push(`${t.excluded.unverified} not @Verified`);
+  if (t.excluded.tooYoung > 0) parts.push(`${t.excluded.tooYoung} below the account-age gate`);
+  if (t.excluded.unknown > 0) parts.push(`${t.excluded.unknown} not resolvable as members`);
+  const hint =
+    t.excluded.unverified > 0 && t.approve + t.reject + t.abstain === 0
+      ? " If those voters *are* verified, DISCORD_ROLE_MAP is probably wrong — check it before re-running."
+      : "";
+  return ` ${t.excluded.total} ballot(s) were not counted: ${parts.join(", ")}.${hint}`;
 }

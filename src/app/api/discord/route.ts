@@ -20,27 +20,15 @@ import { verifyDiscordRequest } from "@/lib/governance/discordVerify";
 import { handleInteraction, type DiscordInteraction } from "@/lib/governance/discordAdapter";
 import { DiscordApiClient } from "@/lib/governance/discordApi";
 import { dispatchAiBuild } from "@/lib/governance/githubDispatch";
-import type { Member, Proposal, Role } from "@/lib/governance/types";
-import type { RoleMap } from "@/lib/governance/voteTally";
+import { onceStoreFromEnv } from "@/lib/governance/onceStore";
+import { RunnerOps } from "@/lib/governance/runnerOps";
+import { AuditLog } from "@/lib/governance/audit";
+import { loadMainRunnerAssignments } from "@/data/liveStore";
+import { parseRoleMap } from "@/lib/governance/roleMap";
+import type { Member, Proposal } from "@/lib/governance/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// Parse DISCORD_ROLE_MAP (roleId -> governance Role). Invalid JSON → empty map.
-function parseRoleMap(raw: string | undefined): RoleMap {
-  if (!raw) return {};
-  try {
-    const obj = JSON.parse(raw);
-    const valid: Role[] = ["founder", "moderator", "maintainer", "main-runner", "runner", "verified"];
-    const out: RoleMap = {};
-    for (const [rid, role] of Object.entries(obj)) {
-      if (typeof role === "string" && (valid as string[]).includes(role)) out[rid] = role as Role;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
 
 export async function POST(request: Request) {
   const publicKeyHex = process.env.DISCORD_PUBLIC_KEY;
@@ -67,9 +55,18 @@ export async function POST(request: Request) {
   // enable the public vote-post + tally flow; without them we're screen-only.
   const token = process.env.DISCORD_BOT_TOKEN;
   const guildId = process.env.DISCORD_GUILD_ID;
-  const roleMap = parseRoleMap(process.env.DISCORD_ROLE_MAP);
+  const { map: roleMap, problems: roleMapProblems } = parseRoleMap(process.env.DISCORD_ROLE_MAP);
   const voteChannelId = process.env.DISCORD_VOTE_CHANNEL_ID;
+  // #governance-log. Absent → the audit trail is still produced, just not
+  // published, which is the behaviour before E-06 was addressed.
+  const governanceLogChannelId = process.env.DISCORD_GOVERNANCE_LOG_CHANNEL_ID;
   const discord = token ? new DiscordApiClient({ token }) : undefined;
+
+  // Fail LOUDLY. Only log once the bot is otherwise wired — before that, an
+  // absent role map is the expected screen-only state, not a misconfiguration.
+  if (token && guildId && roleMapProblems.length > 0) {
+    console.error("[governance] DISCORD_ROLE_MAP problems:", roleMapProblems.join(" "));
+  }
 
   // Roster stays empty here — eligibility for votes is derived per-reactor at
   // tally time (roles via API + roleMap, age via snowflake), which is the
@@ -82,8 +79,27 @@ export async function POST(request: Request) {
   const ghToken = process.env.GITHUB_DISPATCH_TOKEN;
   const ghOwner = process.env.GITHUB_REPO_OWNER ?? "BorderKeeper";
   const ghRepo = process.env.GITHUB_REPO_NAME ?? "dayzcarrental";
+  //
+  // The dispatch is claimed ONCE per proposal before it fires. Re-running
+  // /tally on the same vote used to mint a fresh build, PR and public post
+  // every time, each one spending the real donation balance. Now the second
+  // and later runs report the existing build instead of starting another.
+  const once = onceStoreFromEnv();
   const onApproved = ghToken
     ? async (proposal: Proposal): Promise<string> => {
+        let claimed: boolean;
+        try {
+          claimed = await once.claim(`ai-build:${proposal.id}`);
+        } catch (e) {
+          // Can't prove this is the first run → don't spend. A missed build is
+          // recoverable by hand; a duplicate one costs money and opens a
+          // duplicate PR.
+          console.error("[governance] idempotency claim failed:", (e as Error).message);
+          return "⚠️ Approved, but the build wasn't started (couldn't check whether it had already run). Kick it off manually.";
+        }
+        if (!claimed) {
+          return "ℹ️ Approved — the AI maintainer was already building this proposal, so no second build was started.";
+        }
         const okDispatch = await dispatchAiBuild(
           {
             proposalId: proposal.id,
@@ -106,7 +122,24 @@ export async function POST(request: Request) {
     voteChannelId,
     nowMs: Date.now(),
     roster,
+    roleMapProblems,
+    governanceLogChannelId,
     onApproved,
+    // E-03: RunnerOps existed and was tested, but nothing outside test files
+    // ever constructed it, so per-server authority did nothing and a main
+    // runner ended up waiting on her own approval. This is that construction.
+    // Assignments are read per request so a promotion takes effect immediately
+    // rather than after the next cold start.
+    runnerOpsFor: async (serverId, requester) => {
+      const assignments = await loadMainRunnerAssignments([serverId]);
+      const members = new Map<string, Member>([[requester.id, requester]]);
+      const audit = new AuditLog();
+      return {
+        ops: new RunnerOps(members, assignments, audit),
+        assigned: (assignments.get(serverId) ?? []).length > 0,
+        audit,
+      };
+    },
   });
 
   // Run any deferred Discord work AFTER the response is flushed, so we ack

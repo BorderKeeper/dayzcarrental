@@ -13,7 +13,7 @@
 // never hard-coded. The Discord client is injected too, so this is fully
 // unit-testable with a stub.
 
-import type { Member, Proposal, Role, Vote } from "./types";
+import type { AuditEntry, Member, Proposal, Role, Vote } from "./types";
 import { GovernanceEngine } from "./engine";
 import { accountAgeDays } from "./snowflake";
 import { DiscordApiClient, VOTE_EMOJI, type DiscordMessage } from "./discordApi";
@@ -36,6 +36,10 @@ export function proposalEmbed(p: Proposal): {
     fields: [
       { name: "id", value: p.id.slice(0, 1024) },
       { name: "kind", value: p.actionKind.slice(0, 1024) },
+      // Recorded so /tally can tell the proposal's author from a passer-by.
+      // Without it the reconstructed proposal has no owner and the command has
+      // nobody to authorise against.
+      { name: "author", value: (p.authorId || "unknown").slice(0, 1024) },
       { name: "vote", value: "React ✅ approve · ❌ reject · 🤷 abstain" },
     ],
   };
@@ -51,7 +55,16 @@ export function proposalFromMessage(msg: DiscordMessage): Proposal | null {
   const kind = field("kind");
   if (!id || !kind) return null;
   const title = (embed.title ?? "").replace(/^📋 Proposal:\s*/, "");
-  return { id, authorId: "", actionKind: kind, title, rawBody: embed.description ?? "" };
+  return { id, authorId: authorIdFrom(field("author"), id), actionKind: kind, title, rawBody: embed.description ?? "" };
+}
+
+// The author comes from the embed's `author` field. Vote posts created before
+// that field existed don't carry it — recover the id from the proposal id,
+// which handlePropose builds as `discord-<authorId>-<title-slug>`.
+function authorIdFrom(authorField: string | undefined, proposalId: string): string {
+  if (authorField && authorField !== "unknown") return authorField;
+  const m = /^discord-(\d+)-/.exec(proposalId);
+  return m ? m[1] : "";
 }
 
 // Resolve one reactor into a governance Member: account age from the snowflake,
@@ -85,12 +98,22 @@ export interface TallyDeps {
   guildId: string;
   roleMap: RoleMap;
   nowMs: number;
+  // Optional gate, called once the proposal is known but BEFORE any reactions
+  // are read. Returns a refusal message, or null to proceed. Placed here so an
+  // unauthorised caller costs one API read rather than a full tally, a public
+  // post, and an AI build dispatch.
+  authorize?: (proposal: Proposal) => string | null;
 }
 
 export interface TallyResult {
   proposal: Proposal;
   outcomeSummary: string;
   decision: string;
+  // The engine's audit trail for this run. It used to be written to a log
+  // nobody read and then discarded with the engine instance, so #governance-log
+  // was fed by nothing and the community had no way to see how a decision was
+  // reached. Handing it back is what lets the caller post it.
+  audit: AuditEntry[];
 }
 
 // Collect the votes on a posted vote message and run the engine.
@@ -110,6 +133,9 @@ export async function collectAndTally(
   if (!proposal) {
     return { error: "That message isn't a proposal vote post (no proposal embed found)." };
   }
+
+  const refusal = deps.authorize?.(proposal);
+  if (refusal) return { error: refusal };
 
   const members = new Map<string, Member>();
   const votes: Vote[] = [];
@@ -142,5 +168,10 @@ export async function collectAndTally(
 
   const engine = new GovernanceEngine(members);
   const outcome = engine.run(proposal, votes);
-  return { proposal, outcomeSummary: outcome.summary, decision: outcome.decision };
+  return {
+    proposal,
+    outcomeSummary: outcome.summary,
+    decision: outcome.decision,
+    audit: engine.audit.all(),
+  };
 }

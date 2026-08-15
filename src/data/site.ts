@@ -1,13 +1,18 @@
-// Central place for brand strings and placeholder external links.
-// Swap these for the real URLs when they exist.
+// Central place for brand strings and external links.
+//
+// These are LIVE links, not placeholders — check with the founder before
+// changing one. An expired Discord invite silently closes the only door into
+// the community, so the invite must be created with "Expire after: Never" and
+// "Max uses: No limit".
 
 export const SITE = {
   name: "DayzCarRental.com",
   tagline: "Community car rentals for DayZ survivors — since 2026",
-  // Placeholder links — replace before launch.
-  discordInvite: "https://discord.gg/FGWmPeyeTJ",
-  // LIVE PayPal payment link (real money). NEXT_PUBLIC_PAYPAL_DONATE_URL can
-  // override this (e.g. point at a sandbox link for testing).
+  // LIVE, non-expiring Discord invite.
+  discordInvite: "https://discord.gg/aRANqAyFvY",
+  // LIVE PayPal payment link — this charges REAL MONEY. Do not treat it as a
+  // placeholder. NEXT_PUBLIC_PAYPAL_DONATE_URL can override it (e.g. point at
+  // a PayPal sandbox link for testing).
   paypalDonate: "https://www.paypal.com/ncp/payment/WE95V8M8MRPG4",
   // Contact shown in the retro footer.
   contactEmail: "ops@dayzcarrental.com",
@@ -19,5 +24,6 @@ export const NAV = [
   { href: "/donate-a-car", label: "Donate a Car" },
   { href: "/maintainer", label: "Become a Maintainer" },
   { href: "/runner", label: "Become a Runner" },
+  { href: "/governance", label: "How Governance Works" },
   { href: "/donate", label: "Donate" },
 ] as const;

@@ -1,21 +1,17 @@
 import type { Metadata } from "next";
-import DemoNotice from "@/components/DemoNotice";
 import DonateCarForm from "@/components/DonateCarForm";
 import { getFleet } from "@/data/fleet";
 
 export const metadata: Metadata = {
-  title: "Donate a Car — DayzCarRental.com",
-  description: "Found a spare vehicle? Donate it to the community fleet and name your barter.",
+  title: "Donate a Car (sample data) — DayzCarRental.com",
+  description: "Try the car-donation form against invented servers.",
 };
 
-export const dynamic = "force-dynamic";
-
-export default async function DonateCarPage() {
-  const fleet = await getFleet("live");
+export default async function SandboxDonateCarPage() {
+  const fleet = await getFleet("sandbox");
   return (
     <div>
       <h1>Donate a Car</h1>
-      <DemoNotice />
       <div className="panel panel--plain">
         <p>
           Got a spare car sitting in a field? Add it to the community fleet. Tell us where it is and
