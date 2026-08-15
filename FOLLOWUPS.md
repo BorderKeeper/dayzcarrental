@@ -75,10 +75,13 @@ balance and debited at its true token cost, so a build stops when donations run 
 `scripts/ai-build.mjs` **refuses to run** without `REDIS_URL` rather than building uncapped.
 `AI_BUILD_ALLOW_UNBUDGETED=1` is the deliberate, loudly-logged escape hatch for a smoke test.
 
-**Founder step to activate:** add `REDIS_URL` as a **GitHub Actions repository secret** (it is
-currently only a Vercel env var) and pass it through in `.github/workflows/ai-build.yml` — a locked
-path, so it goes in with the workflow the founder applies by hand. Without it every AI build fails
-closed with a clear message.
+**Founder step to activate — half done (2026-08-14):** the `REDIS_URL` **Actions secret is now set**.
+Still missing: the workflow doesn't pass it to the build step, so `scripts/ai-build.mjs` continues to
+fail closed. One line in `.github/workflows/ai-build.yml` (locked path — see `CI.proposal.md` §3):
+
+```yaml
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+```
 
 ---
 
@@ -118,6 +121,24 @@ path-correct throughout — only the test fixtures assumed POSIX.
 Fixed by building the expectations with the same `node:path` call the code uses (`at()` in
 `builder.test.ts`) instead of hardcoding strings, and making the in-memory fs separator-agnostic.
 The suite is now 76/76 on Windows and unchanged on Linux.
+
+---
+
+## 6. No CI on pull requests [PROPOSED — founder applies]
+
+`ai-build.yml` is the only workflow and fires on `repository_dispatch`, never on a PR — so the test
+suite and `npm run build` have **never run automatically on any PR**, including the AI-authored ones.
+The trust model constrains what the AI *can do* (locked files, compliance screening, spend ceiling)
+but nothing checks that what it produced **works**. `protect-main` has no status check to require.
+
+Written up in **`CI.proposal.md`** (locked path — `.github/**`). It covers three things: the new
+`ci.yml`, the `REDIS_URL` line still missing from `ai-build.yml`, and making `verify` a required
+check in the ruleset.
+
+**⚠️ The non-obvious part:** GitHub won't start a workflow from an event raised by the default
+`GITHUB_TOKEN`, so PRs opened by `ai-build.yml` would arrive with **no CI run** — the gate inverted,
+skipping exactly the PRs it exists for. `create-pull-request` needs a separate `CI_PAT`. Details in
+the proposal.
 
 ---
 

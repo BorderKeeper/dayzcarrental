@@ -1,0 +1,42 @@
+name: CI
+
+# Every PR into main, plus main itself (so a broken merge is visible immediately).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# CI reads code and reports a status. It needs nothing else — no write scope,
+# no secrets. An AI-authored PR runs here, so least privilege is the point.
+permissions:
+  contents: read
+
+# A new push to the same PR supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The governance suite: locked-path refusal, compliance screening, the
+      # budget ceiling, donation idempotency, FX conversion. package.json is
+      # locked so there is no `npm test` script — the runner is invoked
+      # directly. The glob is quoted so node expands it, not the shell.
+      - name: Run tests
+        run: node --import ./scripts/ts-loader.mjs --test "src/lib/governance/__tests__/*.test.ts"
+
+      - name: Build
+        run: npm run build
