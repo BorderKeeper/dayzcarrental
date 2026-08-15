@@ -78,8 +78,28 @@ export class DiscordApiClient {
     return Array.isArray(member?.roles) ? member.roles : [];
   }
 
+  // Grant a role. Used by the #verify button to hand out @Verified.
+  //
+  // Needs the bot to hold Manage Roles AND to sit ABOVE the target role in the
+  // guild's role list — Discord refuses otherwise, with a 403 that says nothing
+  // about ordering. The caller turns that into a message a human can act on.
+  async addGuildMemberRole(guildId: string, userId: string, roleId: string): Promise<void> {
+    const res = await this.fetchImpl(`${API}/guilds/${guildId}/members/${userId}/roles/${roleId}`, {
+      method: "PUT",
+      headers: this.headers(),
+    });
+    // 204 on success, and also on re-adding a role the member already has.
+    if (!res.ok) {
+      throw new Error(`Discord add role failed ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+  }
+
   // Post a message to a channel (the public vote post, and the outcome post).
-  async createMessage(channelId: string, body: { content?: string; embeds?: any[] }): Promise<DiscordMessage> {
+  // `components` carries interactive rows — the verify button lives here.
+  async createMessage(
+    channelId: string,
+    body: { content?: string; embeds?: any[]; components?: any[] },
+  ): Promise<DiscordMessage> {
     const res = await this.fetchImpl(`${API}/channels/${channelId}/messages`, {
       method: "POST",
       headers: this.headers(),

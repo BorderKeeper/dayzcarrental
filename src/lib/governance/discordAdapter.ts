@@ -51,6 +51,8 @@ export interface DiscordInteraction {
   data?: {
     name?: string;
     options?: { name: string; value: string | number | boolean }[];
+    // Present on MESSAGE_COMPONENT interactions (button clicks).
+    custom_id?: string;
   };
   // Discord sends the invoking guild member's role IDs inline, so authorising a
   // command needs no extra API round-trip.
@@ -138,6 +140,10 @@ function resolveAuthor(interaction: DiscordInteraction, roster: Map<string, Memb
 export function handleInteraction(interaction: DiscordInteraction, cfg: AdapterConfig): HandledInteraction {
   if (interaction.type === InteractionType.PING) {
     return { response: { type: InteractionResponseType.PONG } };
+  }
+  if (interaction.type === InteractionType.MESSAGE_COMPONENT) {
+    if (interaction.data?.custom_id === VERIFY_BUTTON_ID) return handleVerify(interaction, cfg);
+    return { response: reply("That control isn't wired to anything.") };
   }
   if (interaction.type === InteractionType.APPLICATION_COMMAND) {
     switch (interaction.data?.name) {
@@ -323,6 +329,97 @@ function handleTally(interaction: DiscordInteraction, cfg: AdapterConfig): Handl
           `Couldn't tally: ${(e as Error)?.message ?? "unexpected error"}. ` +
             "Check the message id is a vote post in this channel, then try again.",
         );
+      }
+    },
+  };
+}
+
+// The #verify button.
+//
+// #verify said "React with ✅ below" and no ✅ was ever seeded, so the single
+// door into the server had nothing to click (C-04). Seeding the reaction would
+// NOT have fixed it: this bot is a serverless interactions webhook, and Discord
+// delivers message reactions as GATEWAY events, which never reach it. People
+// would have clicked and nothing would have happened — a silent failure, worse
+// than a visible one.
+//
+// A button is the fix that matches the architecture: Discord delivers a button
+// press as a MESSAGE_COMPONENT interaction, straight to this endpoint.
+export const VERIFY_BUTTON_ID = "dcr:verify";
+
+// The message + button that scripts/post-verify.mjs publishes. Defined here so
+// the custom_id can't drift from the handler that answers it.
+export function verifyMessage(rulesChannelId?: string): {
+  content: string;
+  components: unknown[];
+} {
+  const rules = rulesChannelId ? `<#${rulesChannelId}>` : "#rules";
+  return {
+    content:
+      `**Get verified**\n\n` +
+      `Read ${rules}, then press the button below to accept them and unlock the rest of the server.\n\n` +
+      `_Runner and Maintainer roles are granted by hand after a quick chat — ask in #contributor-hub once you can see it._`,
+    components: [
+      {
+        type: 1, // action row
+        components: [
+          { type: 2, style: 3, label: "✅  I accept the rules", custom_id: VERIFY_BUTTON_ID },
+        ],
+      },
+    ],
+  };
+}
+
+function handleVerify(interaction: DiscordInteraction, cfg: AdapterConfig): HandledInteraction {
+  const userId = callerId(interaction);
+  if (!cfg.discord || !cfg.guildId) {
+    return { response: reply("Verification isn't configured yet — ask a mod to sort you out.") };
+  }
+
+  // The @Verified role id comes from the role map, which is already parsed and
+  // validated (roleMap.ts). No second env var to set, and no way for the button
+  // to grant a role the governance engine doesn't recognise as verified.
+  const verifiedRoleId = Object.entries(cfg.roleMap ?? {}).find(([, role]) => role === "verified")?.[0];
+  if (!verifiedRoleId) {
+    return {
+      response: reply(
+        "**Can't verify you right now** — no role is mapped to `verified` in this server's config. " +
+          "That's on us, not you. Ping a mod and they'll fix it.",
+      ),
+    };
+  }
+
+  // Already verified? Say so plainly rather than pretending to do work.
+  if (callerRoles(interaction, cfg.roleMap).includes("verified")) {
+    return { response: reply("You're already verified — the community channels should be visible.") };
+  }
+
+  return {
+    response: { type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: { flags: EPHEMERAL } },
+    deferred: async () => {
+      const discord = cfg.discord!;
+      try {
+        await discord.addGuildMemberRole(cfg.guildId!, userId, verifiedRoleId);
+        await editOriginal(
+          discord,
+          interaction,
+          "✅ **You're verified.** The community channels are open — " +
+            "head to #rent-a-car if you're after a car, or #contributor-hub if you'd like to help run things.",
+        );
+      } catch (e) {
+        const msg = (e as Error)?.message ?? "";
+        // A 403 here is almost always the bot's role sitting BELOW @Verified in
+        // the guild's role list. Discord's error doesn't mention ordering, and
+        // it is the first thing to check.
+        const hint = /403/.test(msg)
+          ? " (For a mod: the bot needs Manage Roles, and its own role must sit above @Verified in Server Settings → Roles.)"
+          : "";
+        await editOriginal(
+          discord,
+          interaction,
+          `Couldn't give you the role just now — a mod can add it by hand.${hint}`,
+        );
+        console.error("[verify] could not grant the verified role:", msg);
       }
     },
   };
