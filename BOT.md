@@ -125,10 +125,19 @@ node --import ./scripts/ts-loader.mjs scripts/register-commands.mjs
 Registers as **guild** commands, which appear instantly. Add `--global` for global commands
 (~1h to propagate). Re-run it any time the definitions change — Discord upserts by name.
 
-> **Why a script and not `curl`.** On Windows, PowerShell strips the inner double quotes when it
-> passes `-d '{"name":"propose"}'` to `curl.exe`, so Discord receives `{name:propose}` and answers
-> `The request body contains invalid JSON` (code 50109). The JSON was never wrong — the shell ate
-> it. Escaping around that per-shell is a trap every time; the script sidesteps it entirely.
+> **Why a script and not `curl` or `Invoke-RestMethod`.** Both hand-rolled routes fail on Windows,
+> for two unrelated reasons, and neither error names its real cause:
+>
+> - **`curl.exe` from PowerShell** → `The request body contains invalid JSON` (code 50109).
+>   PowerShell strips the inner double quotes when passing `-d '{"name":"propose"}'` to a native
+>   exe, so Discord receives `{name:propose}`. The JSON was never wrong; the shell ate it.
+> - **`Invoke-RestMethod`** → `403 Forbidden` on every POST, even though GETs with the same token
+>   succeed. Discord's Cloudflare layer rejects PowerShell's default User-Agent. It looks exactly
+>   like a permissions problem and isn't one — if you're diagnosing a 403 here, check the
+>   User-Agent before you go re-inviting the bot.
+>
+> The script uses Node's `fetch`, which trips neither. Verified end to end: all four commands
+> registered from Windows on the first run.
 
 `kind` on `/propose` is registered as **choices**, not free text — otherwise typing "add server"
 instead of `server-add` fails, and the error can only tell you after the fact. The bot still lists
