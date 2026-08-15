@@ -29,8 +29,11 @@ import { ACTION_CATALOG } from "./config";
 import { DiscordApiClient, VOTE_EMOJI } from "./discordApi";
 import { proposalEmbed, collectAndTally, type RoleMap } from "./voteTally";
 import type { RunnerOps, RunnerActionResult, SafehouseOp } from "./runnerOps";
+import { SAFEHOUSE_OPS } from "./commands";
 
-const VALID_SAFEHOUSE_OPS: SafehouseOp[] = ["add", "remove", "stage"];
+// Shared with the registration script, so what Discord offers in the client and
+// what this handler accepts cannot drift apart.
+const VALID_SAFEHOUSE_OPS: readonly SafehouseOp[] = SAFEHOUSE_OPS;
 
 // --- Discord protocol constants -------------------------------------------
 export const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3 } as const;
