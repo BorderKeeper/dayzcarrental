@@ -13,7 +13,7 @@
 // never hard-coded. The Discord client is injected too, so this is fully
 // unit-testable with a stub.
 
-import type { Member, Proposal, Role, Vote } from "./types";
+import type { AuditEntry, Member, Proposal, Role, Vote } from "./types";
 import { GovernanceEngine } from "./engine";
 import { accountAgeDays } from "./snowflake";
 import { DiscordApiClient, VOTE_EMOJI, type DiscordMessage } from "./discordApi";
@@ -109,6 +109,11 @@ export interface TallyResult {
   proposal: Proposal;
   outcomeSummary: string;
   decision: string;
+  // The engine's audit trail for this run. It used to be written to a log
+  // nobody read and then discarded with the engine instance, so #governance-log
+  // was fed by nothing and the community had no way to see how a decision was
+  // reached. Handing it back is what lets the caller post it.
+  audit: AuditEntry[];
 }
 
 // Collect the votes on a posted vote message and run the engine.
@@ -163,5 +168,10 @@ export async function collectAndTally(
 
   const engine = new GovernanceEngine(members);
   const outcome = engine.run(proposal, votes);
-  return { proposal, outcomeSummary: outcome.summary, decision: outcome.decision };
+  return {
+    proposal,
+    outcomeSummary: outcome.summary,
+    decision: outcome.decision,
+    audit: engine.audit.all(),
+  };
 }

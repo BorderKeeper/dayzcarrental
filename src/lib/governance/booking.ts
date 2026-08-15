@@ -47,6 +47,14 @@ export interface Rental extends RentalRequest {
   id: string;
   pricePerDay: CommodityAmount;
   deposit: CommodityAmount;
+  // Set when the car was pulled out of service DURING this rental. The renter
+  // then can't be held to the return deadline for a car they no longer have,
+  // so the deposit is refunded regardless of when (or whether) it comes back.
+  // In this game a deposit is a real rifle and optic — forfeiting one for
+  // something outside the renter's control is the kind of incident that ends a
+  // community's trust in a single afternoon.
+  depositWaived?: boolean;
+  waivedReason?: string;
 }
 
 export type BookingResult =
@@ -110,13 +118,101 @@ export class RentalLedger {
 
   // Return a car. Deposit is refunded (in-game commodity) unless the car came
   // back after the agreed end day — then it is forfeit, per COMPLIANCE.md #3.
-  closeRental(rentalId: string, returnedOnDay: number): { refunded: boolean; deposit: CommodityAmount } | null {
+  //
+  // The one exception is a car withdrawn from service mid-rental: the renter
+  // couldn't return it on time because it was taken from them, so a waiver set
+  // by takeOutOfService overrides lateness.
+  closeRental(
+    rentalId: string,
+    returnedOnDay: number,
+  ): { refunded: boolean; deposit: CommodityAmount; waived: boolean; reason?: string } | null {
     const idx = this.rentals.findIndex((r) => r.id === rentalId);
     if (idx === -1) return null;
     const rental = this.rentals[idx];
     this.rentals.splice(idx, 1);
     const onTime = returnedOnDay <= rental.endDay;
-    return { refunded: onTime, deposit: rental.deposit };
+    const waived = rental.depositWaived === true;
+    return {
+      refunded: onTime || waived,
+      deposit: rental.deposit,
+      waived,
+      reason: waived ? rental.waivedReason : undefined,
+    };
+  }
+
+  // Rentals currently running over a given day. A car with one of these must
+  // not silently vanish from under its renter.
+  activeRentalsForCar(carId: string, onDay?: number): Rental[] {
+    return this.rentals
+      .filter((r) => r.carId === carId && (onDay === undefined || (r.startDay <= onDay && onDay <= r.endDay)))
+      .map((r) => ({ ...r }));
+  }
+
+  // Pull a car out of the rentable fleet (destroyed, glitched, stuck, or just
+  // needing work).
+  //
+  // Previously there was no method for this at all: a runner flipped
+  // `car.staged` on the shared map, the active rental kept running, nobody was
+  // told, and the renter later forfeited their deposit for a car that had been
+  // taken away from them.
+  //
+  // So it REFUSES by default while a rental is running, and names who is
+  // affected so a human can talk to them. Sometimes a car genuinely has to go
+  // (it burned), and blocking outright would just push runners back to editing
+  // state by hand — so `force` is allowed, but it waives the deposit on every
+  // affected rental as a condition of being used. The renter is never the one
+  // who pays for this.
+  takeOutOfService(
+    carId: string,
+    runnerId: string,
+    opts: { force?: boolean; reason?: string; onDay?: number } = {},
+  ):
+    | { status: "unknown-car"; detail: string }
+    | { status: "blocked"; affected: Rental[]; detail: string }
+    | { status: "withdrawn"; affected: Rental[]; detail: string } {
+    const car = this.cars.get(carId);
+    if (!car) return { status: "unknown-car", detail: `Unknown car '${carId}'.` };
+
+    const affected = this.rentals.filter(
+      (r) => r.carId === carId && (opts.onDay === undefined || (r.startDay <= opts.onDay && opts.onDay <= r.endDay)),
+    );
+
+    if (affected.length > 0 && !opts.force) {
+      const who = affected.map((r) => `${r.renterId} (days ${r.startDay}-${r.endDay})`).join(", ");
+      return {
+        status: "blocked",
+        affected: affected.map((r) => ({ ...r })),
+        detail:
+          `Car '${carId}' is out on an active rental to ${who}. ` +
+          `Taking it out of service now would strand them and put their deposit at risk. ` +
+          `Talk to them first, or re-run with force to withdraw it anyway — that automatically waives their deposit.`,
+      };
+    }
+
+    const reason = opts.reason?.trim() || "taken out of service by a runner";
+    for (const r of affected) {
+      r.depositWaived = true;
+      r.waivedReason = reason;
+    }
+    car.staged = false;
+    return {
+      status: "withdrawn",
+      affected: affected.map((r) => ({ ...r })),
+      detail:
+        affected.length === 0
+          ? `Car '${carId}' withdrawn by ${runnerId} (${reason}). No active rentals.`
+          : `Car '${carId}' withdrawn by ${runnerId} (${reason}). ` +
+            `${affected.length} active rental(s) affected — deposits waived, tell the renter(s).`,
+    };
+  }
+
+  // Put a repaired/recovered car back in the fleet.
+  returnToService(carId: string, runnerId: string): boolean {
+    const car = this.cars.get(carId);
+    if (!car) return false;
+    car.acceptedByRunnerId = runnerId;
+    car.staged = true;
+    return true;
   }
 
   active(): Rental[] {

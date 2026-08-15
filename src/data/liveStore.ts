@@ -25,11 +25,16 @@ import type { Fleet, GameServer, Safehouse } from "./types";
 const SERVERS_KEY = "dcr:fleet:servers";
 const SAFEHOUSES_PREFIX = "dcr:fleet:safehouses:";
 const VEHICLES_PREFIX = "dcr:fleet:vehicles:";
+const MAIN_RUNNERS_PREFIX = "dcr:fleet:mainrunners:";
 
 export const FLEET_KEYS = {
   servers: SERVERS_KEY,
   safehousesFor: (serverId: string) => SAFEHOUSES_PREFIX + serverId,
   vehiclesFor: (serverId: string) => VEHICLES_PREFIX + serverId,
+  // Discord user ids who lead a given server. Main-runner authority is
+  // per-server, so holding the @main-runner role is necessary but not
+  // sufficient — you must also be assigned to THIS server.
+  mainRunnersFor: (serverId: string) => MAIN_RUNNERS_PREFIX + serverId,
 };
 
 // Parse a JSON array out of a Redis reply, tolerating absence and junk. A
@@ -89,4 +94,39 @@ export async function loadLiveFleet(opts: LoadOptions = {}): Promise<Fleet> {
     console.error("[fleet] could not load the live fleet from Redis:", (e as Error).message);
     return empty;
   }
+}
+
+// Who leads which server, as RunnerOps wants it: serverId -> member ids.
+//
+// Loaded per request rather than held in a module-scope map, because a
+// serverless instance would otherwise serve a stale roster after a runner is
+// promoted. Only the servers asked about are fetched.
+//
+// An empty map is a real answer: it means nobody has per-server authority yet,
+// and every change escalates. That's the correct behaviour, but it's also the
+// exact symptom of a store that was never seeded — so callers should say which
+// it is rather than leaving a runner to guess.
+export async function loadMainRunnerAssignments(
+  serverIds: string[],
+  opts: LoadOptions = {},
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (serverIds.length === 0) return out;
+
+  const url = opts.url === undefined ? redisUrlFromEnv() : opts.url;
+  const run = opts.run ?? (url ? (cmds: (string | number)[][]) => redisPipeline(url, cmds) : null);
+  if (!run) return out;
+
+  try {
+    const replies = await run(serverIds.map((id) => ["GET", FLEET_KEYS.mainRunnersFor(id)]));
+    serverIds.forEach((id, i) => {
+      const ids = parseArray<string>(replies[i], FLEET_KEYS.mainRunnersFor(id)).filter(
+        (v) => typeof v === "string" && v !== "",
+      );
+      if (ids.length > 0) out.set(id, ids);
+    });
+  } catch (e) {
+    console.error("[fleet] could not load main-runner assignments:", (e as Error).message);
+  }
+  return out;
 }
