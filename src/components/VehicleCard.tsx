@@ -15,26 +15,25 @@ const SIZE_LABEL: Record<Vehicle["size"], string> = {
 };
 
 export default function VehicleCard({ vehicle, onRent }: Props) {
-  // Fall back to a labeled placeholder box if the image file is missing.
+  // Fall back to a labelled box if the image is missing.
   const [imgOk, setImgOk] = useState(true);
 
   return (
     <div className="vcard">
-      <div className="vcard__img">
+      <div className="vcard__img vcard__img--art">
         {imgOk ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={vehicle.image}
-            alt={`${vehicle.name} with a survivor standing next to it`}
+            // These are drawings, not photographs — say so, rather than
+            // describing a survivor standing next to a car that isn't there.
+            alt={`Illustration of a ${vehicle.type.toLowerCase()}`}
             onError={() => setImgOk(false)}
           />
         ) : (
-          <span>
-            [ photo of {vehicle.name} ]<br />
-            drop image at
-            <br />
-            public{vehicle.image}
-          </span>
+          // The old fallback printed "drop image at public/vehicles/…" — a
+          // developer note leaking into a page players see.
+          <span>{vehicle.type}</span>
         )}
       </div>
       <div className="vcard__body">

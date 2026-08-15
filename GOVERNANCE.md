@@ -128,7 +128,36 @@ on arrival (unanimous vote can't save it, founder can't override it to yes); a p
 proposal is quarantined; a sockpuppet swarm fails quorum; disabled spend/deploy actions can't pass;
 founder veto still overrides a passing tally.
 
-### 5b. The one case that *does* escalate
+### 5b. When a community vote and a main runner disagree
+
+A main runner adds a safehouse on her server. A community vote then passes to remove it, 2–1, with
+her own ❌ outvoted on the server she runs. Who wins?
+
+**A passing community vote wins.** The founder and the community outrank per-server authority, and
+a main runner's authority is a *convenience* — it exists so routine work doesn't need a quorum, not
+to create a private fiefdom the community cannot reach into.
+
+This is a deliberate choice by the founder, made with the trade-off understood: it means someone who
+does the actual work on a server can be overruled by people who don't play there. The alternative —
+per-server sovereignty — protects the runner but lets a server drift away from the project's own
+rules with no way back. On a small, non-commercial, for-fun project, a community that would abuse
+this is a community the project doesn't survive anyway.
+
+In practice:
+
+- A main runner acts **immediately** and without a vote. That is the normal path and nothing about
+  it changes.
+- A vote is the **exception**, used when someone thinks a server's list has gone wrong. It should be
+  rare; if it isn't, that's a people problem, not a rules problem.
+- When a vote reverses a runner's change, **tell the runner**, in `#governance-log` and directly.
+  Being overruled silently is what turns a disagreement into someone leaving.
+- The founder can veto either side (§4), which is the backstop if a vote is obviously bad-faith.
+
+> **Known gap.** The engine doesn't yet detect that a vote and a runner-ops change touch the same
+> safehouse, so both can produce a PR and the founder is the one who notices at merge time. The
+> *rule* is settled here; the automatic reconciliation is not built. See `ROADMAP.md`.
+
+### 5c. The one case that *does* escalate
 
 If a server has **no assigned main runner**, a runner dispute on it can't be resolved locally — the
 engine returns `denied` and logs `dispute-escalated`. **Rule:** every active server must have at

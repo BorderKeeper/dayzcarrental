@@ -18,13 +18,18 @@ export const SITE = {
   contactEmail: "ops@dayzcarrental.com",
 };
 
-// The five site functions, in nav order. `home` is the default Rent view.
+// The site's sections, in nav order. `home` is the default Rent view.
+//
+// Labels are NOUNS, not calls to action: "Become a Maintainer" reads fine as a
+// page heading and badly as a tab, and once there were seven of them the bar
+// wrapped and orphaned "Donate" onto a row of its own. The pages keep their
+// inviting headings — a nav names a destination, a heading makes the pitch.
 export const NAV = [
   { href: "/", label: "Rent a Car" },
   { href: "/donate-a-car", label: "Donate a Car" },
   { href: "/list-your-server", label: "List Your Server" },
-  { href: "/maintainer", label: "Become a Maintainer" },
-  { href: "/runner", label: "Become a Runner" },
-  { href: "/governance", label: "How Governance Works" },
+  { href: "/maintainer", label: "Maintainers" },
+  { href: "/runner", label: "Runners" },
+  { href: "/governance", label: "Governance" },
   { href: "/donate", label: "Donate" },
 ] as const;

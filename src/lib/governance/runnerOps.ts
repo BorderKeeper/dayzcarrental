@@ -10,6 +10,13 @@
 //     the "main runner tag gates who edits that server's safehouse list"
 //     (ROADMAP.md Phase 2).
 //
+// Main-runner authority is a CONVENIENCE, not sovereignty: it exists so routine
+// work doesn't wait on a quorum. Where a passing community vote and a main
+// runner disagree, the VOTE WINS — see GOVERNANCE.md §5b for the founder's
+// decision and the trade-off it accepts. This module doesn't enforce that
+// ordering (a vote and a runner-op can still produce two contradictory PRs);
+// the rule is written down so the answer isn't argued about after the fact.
+//
 // Anything that changes committed site DATA (src/data/safehouses.ts) still
 // becomes a feature branch → PR the founder merges. This module decides the
 // INTENT (who is allowed to change what, and how a dispute lands); it emits a

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Side profile illustration of a compact three-box sedan">
+  <!-- Sarka 120 — three-box sedan. The read at card size is the BOOT: the roof
+       stops ahead of the rear wheel and drops to a flat deck well below it.
+       That step is the only thing distinguishing it from the hatchbacks, so it
+       is drawn large and unambiguous. Original artwork. -->
+  <g fill="none" stroke="#14243a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M30 106 L30 88 Q30 82 37 81 L74 78
+             L100 56 Q104 52 111 52 L178 52 Q185 52 189 56 L212 78
+             L286 82 Q294 83 294 90 L294 106 Z" fill="#2f6fb3" />
+    <!-- boot deck, sitting a clear 22px below the roofline -->
+    <path d="M212 78 L294 82" stroke-width="3.5" />
+    <path d="M108 76 L126 58 L150 58 L150 76 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M158 76 L158 58 L176 58 L192 76 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M154 78 L154 102" stroke-width="2" />
+    <path d="M166 86 L178 86" stroke-width="3" />
+    <path d="M34 88 L48 88" stroke="#c8a415" stroke-width="4.5" />
+    <path d="M292 88 L280 88" stroke="#a11" stroke-width="4.5" />
+  </g>
+  <g stroke="#14243a" stroke-width="3.5">
+    <circle cx="84" cy="106" r="18" fill="#14243a" />
+    <circle cx="84" cy="106" r="7.5" fill="#9db4cf" />
+    <circle cx="240" cy="106" r="18" fill="#14243a" />
+    <circle cx="240" cy="106" r="7.5" fill="#9db4cf" />
+  </g>
+  <path d="M20 126 L300 126" stroke="#6f8db3" stroke-width="3" stroke-linecap="round" opacity="0.6" />
+</svg>
