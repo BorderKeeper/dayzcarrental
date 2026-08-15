@@ -61,7 +61,10 @@ export default function RunnerPage() {
 
       <div className="panel" style={{ textAlign: "center" }}>
         <h2 style={{ border: "none" }}>Want to run cars on your server?</h2>
-        <p>Hop into the <strong>#runners</strong> channel and tell us which servers you play.</p>
+        <p>
+          Say hello in <strong>#contributor-hub</strong> and tell us which servers you play. A mod
+          will grant you the runner role after a quick chat — that opens up the runner channels.
+        </p>
         <a className="btn btn--big" href={SITE.discordInvite} target="_blank" rel="noopener noreferrer">
           Join our Discord &raquo;
         </a>

@@ -252,6 +252,13 @@ textarea {
   border-color: var(--accent);
   background: #fdf6d3;
 }
+/* Real-money warning. Deliberately louder than .notice--demo: the one page
+   that can actually charge someone must not look like the mockup pages. */
+.notice--money {
+  border-color: #a11;
+  border-left-width: 5px;
+  background: #fbe4e4;
+}
 
 /* ---- vehicle grid ------------------------------------------ */
 .vehicle-grid {
