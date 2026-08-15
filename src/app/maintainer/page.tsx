@@ -60,7 +60,10 @@ export default function MaintainerPage() {
 
       <div className="panel" style={{ textAlign: "center" }}>
         <h2 style={{ border: "none" }}>Ready to help govern the fleet?</h2>
-        <p>Introduce yourself in the <strong>#maintainers</strong> channel and grab the role.</p>
+        <p>
+          Introduce yourself in <strong>#contributor-hub</strong> and ask for the maintainer role —
+          a mod grants it after a quick chat. Roles aren&apos;t self-serve.
+        </p>
         <a className="btn btn--big" href={SITE.discordInvite} target="_blank" rel="noopener noreferrer">
           Join our Discord &raquo;
         </a>

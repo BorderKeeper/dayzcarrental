@@ -20,12 +20,22 @@ export default function DonatePage() {
   return (
     <div>
       <h1>Donate</h1>
+      {/* This page ALWAYS carries a notice. The old logic showed one only while
+          the button was fake and dropped it the moment the button could charge
+          real money — inverted relative to risk. Both branches below render. */}
       {IS_PLACEHOLDER ? (
         <DemoNotice>
           The donate button below isn&apos;t wired to a real PayPal link yet — set
           NEXT_PUBLIC_PAYPAL_DONATE_URL to your PayPal donation link.
         </DemoNotice>
-      ) : null}
+      ) : (
+        <div className="notice notice--money" role="note">
+          <strong>This button takes real money.</strong> The rest of the site is a mockup, but this
+          donation is a genuine PayPal payment and will actually leave your account. It is{" "}
+          <strong>entirely voluntary</strong>, funds upkeep only, and buys you nothing in-game — no
+          car, no priority, no advantage.
+        </div>
+      )}
 
       <div className="panel panel--plain">
         <p>
@@ -46,8 +56,12 @@ export default function DonatePage() {
           Donate with PayPal &raquo;
         </a>
         <p className="small muted" style={{ marginTop: 12 }}>
-          You&apos;ll be taken to PayPal to complete a secure donation. When it completes, PayPal
-          notifies the site and the amount is added to the AI maintainer&apos;s upkeep budget.
+          You&apos;ll be taken to PayPal to complete a secure donation. The upkeep figure below is
+          reconciled against PayPal on a schedule, so{" "}
+          <strong>allow up to about 24 hours for a donation to show up here</strong> — PayPal itself
+          can take a few hours to publish a transaction. If it hasn&apos;t appeared after a day,
+          say so in Discord and we&apos;ll chase it. Your PayPal receipt is the record of payment;
+          this counter is only a transparency display.
         </p>
         <TreasuryBalance />
       </div>

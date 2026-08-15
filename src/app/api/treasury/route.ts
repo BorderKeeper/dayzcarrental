@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { RedisBudgetStore, upstashFromEnv } from "@/lib/governance/redisBudgetStore";
 import { InMemoryBudgetStore } from "@/lib/governance/budgetStore";
-import { fmtUsd, MICRO } from "@/lib/governance/budget";
+import { MICRO } from "@/lib/governance/budget";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +27,16 @@ export async function GET() {
     // Store unreachable → report unknown rather than a misleading 0.
     return NextResponse.json({ ok: false, durable: !!upstash, error: "budget store unavailable" }, { status: 200 });
   }
-  // Human-readable per-currency totals, e.g. { USD: "$1.0000", CZK: "13.8300" }.
+  // Human-readable per-currency totals, e.g. { USD: "$1.45", CZK: "13.83" }.
+  //
+  // Rounded to cents on purpose: this is a public-facing money figure, and
+  // "$1.4534" reads as unfinished. The engine's own `fmtUsd` keeps 4dp because
+  // sub-cent precision matters for AI token spend — that is not this. The exact
+  // value is still available untouched in `balancesMicros` below.
   const display: Record<string, string> = {};
   for (const [cur, micros] of Object.entries(balances)) {
-    display[cur] = cur === "USD" ? fmtUsd(micros) : (micros / MICRO).toFixed(4);
+    const amount = (micros / MICRO).toFixed(2);
+    display[cur] = cur === "USD" ? `$${amount}` : amount;
   }
   return NextResponse.json({
     ok: true,
