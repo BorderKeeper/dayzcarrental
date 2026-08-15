@@ -21,7 +21,7 @@
 // Discord's 3s ack window, handlers return an immediate `response` plus an
 // optional `deferred` thunk the route runs after flushing the ack.
 
-import type { Member, Proposal } from "./types";
+import type { Member, Proposal, Role } from "./types";
 import { GovernanceEngine } from "./engine";
 import { screenProposal } from "./screen";
 import { DiscordApiClient, VOTE_EMOJI } from "./discordApi";
@@ -44,7 +44,9 @@ export interface DiscordInteraction {
     name?: string;
     options?: { name: string; value: string | number | boolean }[];
   };
-  member?: { user?: { id?: string; username?: string } };
+  // Discord sends the invoking guild member's role IDs inline, so authorising a
+  // command needs no extra API round-trip.
+  member?: { user?: { id?: string; username?: string }; roles?: string[] };
   user?: { id?: string; username?: string };
 }
 
@@ -71,6 +73,10 @@ export interface AdapterConfig {
   voteChannelId?: string; // where public vote posts go (defaults to the invoking channel)
   nowMs: number;
   roster: Map<string, Member>;
+  // Problems found parsing DISCORD_ROLE_MAP. Non-empty means a tally would be
+  // meaningless, so /tally reports the misconfiguration instead of running and
+  // blaming the community for "no quorum".
+  roleMapProblems?: string[];
   // Fired when a /tally resolves to "approved" — the route wires this to the
   // GitHub repository_dispatch that kicks off the AI feature-builder workflow.
   // Returns a short human status line to append to the outcome post. Optional:
@@ -82,6 +88,23 @@ function opts(interaction: DiscordInteraction): Record<string, string> {
   const out: Record<string, string> = {};
   for (const o of interaction.data?.options ?? []) out[o.name] = String(o.value);
   return out;
+}
+
+// Roles allowed to tally ANY proposal. Everyone else may only tally their own.
+const TALLY_ROLES: Role[] = ["founder", "moderator", "maintainer"];
+
+// Map the invoking member's guild role IDs through the role map.
+function callerRoles(interaction: DiscordInteraction, roleMap: RoleMap | undefined): Role[] {
+  const roles: Role[] = ["everyone"];
+  for (const rid of interaction.member?.roles ?? []) {
+    const mapped = roleMap?.[rid];
+    if (mapped && !roles.includes(mapped)) roles.push(mapped);
+  }
+  return roles;
+}
+
+function callerId(interaction: DiscordInteraction): string {
+  return interaction.member?.user?.id ?? interaction.user?.id ?? "";
 }
 
 function resolveAuthor(interaction: DiscordInteraction, roster: Map<string, Member>): Member {
@@ -176,6 +199,15 @@ function handlePropose(interaction: DiscordInteraction, cfg: AdapterConfig): Han
 }
 
 // /tally message:<messageId> [channel:<channelId>]
+//
+// Access control matters here more than anywhere else in the bot: an approved
+// tally fires the AI feature-builder, which spends the real donation balance.
+// Before this, the handler checked NOTHING about the caller — any stranger
+// could re-run it on the same vote and mint a fresh build, PR and public post
+// each time. Two independent limits now apply:
+//   1. only the proposal's author or a mod/maintainer/founder may tally it, and
+//   2. the dispatch itself is claimed once per proposal (see the route), so
+//      even an authorised double-run is a no-op.
 function handleTally(interaction: DiscordInteraction, cfg: AdapterConfig): HandledInteraction {
   const o = opts(interaction);
   const messageId = o.message;
@@ -187,38 +219,76 @@ function handleTally(interaction: DiscordInteraction, cfg: AdapterConfig): Handl
   if (!messageId) {
     return { response: reply("Usage: `/tally message:<vote message id>`.") };
   }
+  // A broken role map makes every tally report "no quorum" no matter how people
+  // voted. Say that plainly instead of running one and blaming the community.
+  if (cfg.roleMapProblems && cfg.roleMapProblems.length > 0) {
+    return {
+      response: reply(
+        "**Can't tally — the server's role map is misconfigured.**\n" +
+          "Votes would be counted as zero regardless of how people reacted, so this is refusing " +
+          "rather than reporting a false result. Ask the founder to fix `DISCORD_ROLE_MAP`:\n> " +
+          cfg.roleMapProblems.join("\n> "),
+      ),
+    };
+  }
+
+  const invoker = callerId(interaction);
+  const roles = callerRoles(interaction, cfg.roleMap);
+  const privileged = roles.some((r) => TALLY_ROLES.includes(r));
 
   return {
     response: { type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE },
     deferred: async () => {
       const discord = cfg.discord!;
-      const result = await collectAndTally(channelId, messageId, {
-        discord,
-        guildId: cfg.guildId!,
-        roleMap: cfg.roleMap!,
-        nowMs: cfg.nowMs,
-      });
-      if ("error" in result) {
-        await editOriginal(discord, interaction, `Couldn't tally: ${result.error}`);
-        return;
-      }
-      // On approval, kick off the AI feature-builder (if wired). It only ever
-      // opens a PR the founder merges — never auto-merges, never deploys.
-      let buildLine = "";
-      if (result.decision === "approved" && cfg.onApproved) {
-        try {
-          buildLine = "\n" + (await cfg.onApproved(result.proposal));
-        } catch {
-          buildLine = "\n⚠️ Approved, but the AI build trigger failed — kick it off manually.";
+      try {
+        const result = await collectAndTally(channelId, messageId, {
+          discord,
+          guildId: cfg.guildId!,
+          roleMap: cfg.roleMap!,
+          nowMs: cfg.nowMs,
+          // Runs once the proposal is known, before any reactions are read.
+          authorize: (proposal) => {
+            if (privileged) return null;
+            if (invoker && proposal.authorId && invoker === proposal.authorId) return null;
+            return (
+              "only the person who opened this proposal, or a moderator/maintainer, can tally it. " +
+              "Ask in the proposal thread if you think it's ready to count."
+            );
+          },
+        });
+        if ("error" in result) {
+          await editOriginal(discord, interaction, `Couldn't tally: ${result.error}`);
+          return;
         }
-      }
+        // On approval, kick off the AI feature-builder (if wired). It only ever
+        // opens a PR the founder merges — never auto-merges, never deploys.
+        let buildLine = "";
+        if (result.decision === "approved" && cfg.onApproved) {
+          try {
+            buildLine = "\n" + (await cfg.onApproved(result.proposal));
+          } catch {
+            buildLine = "\n⚠️ Approved, but the AI build trigger failed — kick it off manually.";
+          }
+        }
 
-      // Post the outcome publicly in the vote channel (the audit record), and
-      // confirm to the caller.
-      await discord.createMessage(channelId, {
-        content: `🗳️ **Vote result — ${result.proposal.title}**\n${result.outcomeSummary}${buildLine}`,
-      });
-      await editOriginal(discord, interaction, `Tallied. Decision: **${result.decision}**. Posted the result in the channel.`);
+        // Post the outcome publicly in the vote channel (the audit record), and
+        // confirm to the caller.
+        await discord.createMessage(channelId, {
+          content: `🗳️ **Vote result — ${result.proposal.title}**\n${result.outcomeSummary}${buildLine}`,
+        });
+        await editOriginal(discord, interaction, `Tallied. Decision: **${result.decision}**. Posted the result in the channel.`);
+      } catch (e) {
+        // Nothing above may throw past this point. A deferred handler that
+        // throws never edits the original response, so Discord leaves the user
+        // staring at a "thinking…" spinner forever (a bad message id did
+        // exactly that). Always land on a real reply.
+        await editOriginal(
+          discord,
+          interaction,
+          `Couldn't tally: ${(e as Error)?.message ?? "unexpected error"}. ` +
+            "Check the message id is a vote post in this channel, then try again.",
+        );
+      }
     },
   };
 }

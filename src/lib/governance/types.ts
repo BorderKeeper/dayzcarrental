@@ -82,6 +82,21 @@ export interface Tally {
   eligibleBallots: number; // approve + reject from eligible voters
   quorumMet: boolean;
   approvalRatio: number; // approve / (approve + reject), 0 when none
+  // Ballots that were cast but NOT counted, per unique member, by reason.
+  //
+  // These used to be dropped silently, which made two very different situations
+  // produce byte-identical output: "nobody voted" and "everybody voted but the
+  // role map is misconfigured so nobody resolved as @Verified". The second is a
+  // config bug that reads as community apathy and gives the founder no signal.
+  // Reporting exclusions is what tells them apart.
+  excluded: TallyExclusions;
+}
+
+export interface TallyExclusions {
+  total: number;
+  unverified: number; // no @Verified role (or the role map didn't map it)
+  tooYoung: number; // account younger than the age gate
+  unknown: number; // reactor couldn't be resolved to a member at all
 }
 
 // The final outcome of running a proposal through the engine.

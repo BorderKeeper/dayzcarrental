@@ -15,7 +15,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 NODE="${NODE:-node}"
 
+# `--import` takes a module specifier, not a path. On Windows an absolute path
+# like F:\repo\register.mjs parses as the URL scheme "f:", and Node rejects it
+# with ERR_UNSUPPORTED_ESM_URL_SCHEME — every test file fails before a single
+# test runs, and the stack trace never mentions the real cause. Pass a proper
+# file:// URL instead; harmless on Linux/macOS, required under Git Bash/MSYS.
+REGISTER="$ROOT/src/lib/governance/__tests__/register.mjs"
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    # cygpath -m yields F:/repo/... — mixed separators, which file:/// accepts.
+    REGISTER_URL="file:///$(cygpath -m "$REGISTER")"
+    ;;
+  *)
+    REGISTER_URL="file://$REGISTER"
+    ;;
+esac
+
 exec "$NODE" \
-  --import "$ROOT/src/lib/governance/__tests__/register.mjs" \
+  --import "$REGISTER_URL" \
   --test \
   "$ROOT"/src/lib/governance/__tests__/*.test.ts
