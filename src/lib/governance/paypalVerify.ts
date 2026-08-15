@@ -108,7 +108,10 @@ export interface ExtractedDonation {
 // Event types that mean "money actually completed moving". PayPal fires
 // different ones depending on the payment path (REST capture vs. checkout sale
 // vs. no-code payment links), so we accept the completed variants.
-const CREDIT_TYPES = new Set([
+// Exported so scripts/paypal-doctor.mjs can check the live webhook subscribes
+// to exactly these. A webhook that fires for events we ignore looks identical,
+// from the outside, to a webhook that never fires at all.
+export const CREDIT_TYPES = new Set([
   "PAYMENT.CAPTURE.COMPLETED",
   "PAYMENT.SALE.COMPLETED",
 ]);

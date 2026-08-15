@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { verifyPaypalWebhook, extractDonation, getAccessToken, type PaypalConfig } from "../paypalVerify";
+import { verifyPaypalWebhook, extractDonation, getAccessToken, CREDIT_TYPES, type PaypalConfig } from "../paypalVerify";
 import { InMemoryBudgetStore } from "../budgetStore";
 import { MICRO } from "../budget";
 import type { FetchLike } from "../aiClient";
@@ -167,4 +167,24 @@ test("donation flow: verified USD capture credits the store exactly once", async
   assert.equal(r1.applied, true);
   assert.equal(r2.applied, false);
   assert.equal(await store.getBalanceMicros(), 10 * MICRO);
+});
+
+// ---------------------------------------------------------------------------
+// The doctor script duplicates CREDIT_TYPES so it can run from a bare checkout
+// without the TS loader. That duplication is only safe if it can't drift: a
+// doctor checking for the wrong events would clear a webhook that credits
+// nothing, which is worse than having no doctor at all.
+// ---------------------------------------------------------------------------
+test("paypal-doctor checks for exactly the event types the handler credits", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../../../../scripts/paypal-doctor.mjs", import.meta.url), "utf8");
+  const line = src.match(/const CREDIT_TYPES = \[([^\]]*)\]/);
+  assert.ok(line, "paypal-doctor.mjs should declare a CREDIT_TYPES array");
+
+  const inScript = line![1]
+    .split(",")
+    .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean)
+    .sort();
+  assert.deepEqual(inScript, [...CREDIT_TYPES].sort(), "doctor and handler disagree on credited events");
 });

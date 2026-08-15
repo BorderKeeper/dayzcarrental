@@ -96,6 +96,24 @@ test("tally: eight unverified ✅ votes report as excluded, not as an empty room
   assert.match(outcome.summary, /DISCORD_ROLE_MAP is probably wrong/);
 });
 
+// F-02 — on a young server quorum may be unreachable, so saying how far short
+// the vote fell is the difference between "keep going" and "this is hopeless".
+test("F-02: a no-quorum result says how many more ballots are needed", () => {
+  const members = new Map<string, Member>([
+    ["v1", { id: "v1", handle: "v1", roles: ["everyone", "verified"], accountAgeDays: 400 }],
+  ]);
+  const outcome = new GovernanceEngine(members).run(
+    { id: "p3", authorId: "v1", actionKind: "policy-note", title: "A note", rawBody: "Harmless." },
+    [{ memberId: "v1", ballot: "approve" }],
+  );
+  assert.equal(outcome.decision, "no-quorum");
+  assert.match(outcome.summary, /Needs 3 eligible/);
+  assert.match(outcome.summary, /got 1/);
+  assert.match(outcome.summary, /2 more to go/);
+  // Abstains not counting toward quorum is a real surprise; name it.
+  assert.match(outcome.summary, /doesn't count toward quorum/);
+});
+
 test("tally: one member reacting several times is one excluded person, not three", () => {
   const members = new Map<string, Member>([
     ["u1", { id: "u1", handle: "u1", roles: ["everyone"], accountAgeDays: 400 }],
