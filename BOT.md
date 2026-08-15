@@ -144,6 +144,26 @@ instead of `server-add` fails, and the error can only tell you after the fact. T
 the valid kinds if an unknown one reaches it (via an older client, say). Disabled action kinds are
 never offered, since no vote could approve them.
 
+### Seed the empty channels [you]
+
+21 of 24 channels had never had a message in them, including `#rent-a-car`, whose own topic promises
+"how to rent". Empty rooms read as a dead project far more strongly than a small one does.
+
+The content is in `src/data/channelSeeds.ts` — **read the diff before running this**, since these
+pins are the first thing a newcomer reads.
+
+```bash
+DISCORD_BOT_TOKEN=... DISCORD_GUILD_ID=... \
+  node --import ./scripts/ts-loader.mjs scripts/seed-channels.mjs --dry-run
+```
+
+Dry-run first: it resolves every seed against the real guild and reports any channel name that no
+longer exists (usually a rename). Drop `--dry-run` to post for real.
+
+**Idempotent** — it skips any channel where the bot already pinned something, so adding one seed
+later posts only that one. `--force` overrides. The bot needs **View Channel**, **Send Messages**,
+and **Manage Messages** (to pin) in each target channel; if pinning fails the message is still
+posted and it says so.
 ### The `#verify` button [you]
 
 `#verify` is the single door into the server, and it told newcomers to *"React with ✅ below"* with
