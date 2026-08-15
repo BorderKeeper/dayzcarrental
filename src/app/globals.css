@@ -120,11 +120,20 @@ h3 {
 }
 .topnav a {
   display: block;
-  padding: 8px 16px;
+  /* Share the bar evenly and fill it. Without flex-grow a wrapped row leaves a
+     single stranded tab against empty space, which reads as broken rather than
+     deliberate — and the bar will wrap eventually on a narrow phone however
+     short the labels get. Filling makes that outcome look intentional. */
+  flex: 1 1 auto;
+  text-align: center;
+  white-space: nowrap;
+  padding: 8px 12px;
   color: var(--blue-dark);
   font-weight: bold;
   text-decoration: none;
   border-right: 1px solid var(--panel-border);
+  /* Separates the rows when it does wrap; invisible when it doesn't. */
+  border-bottom: 1px solid var(--panel-border);
   font-size: 12px;
 }
 .topnav a:hover {
