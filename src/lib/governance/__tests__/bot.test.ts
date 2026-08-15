@@ -206,10 +206,14 @@ test("adapter: a non-compliant /propose is dead on arrival regardless of who sen
     },
     screenOnlyCfg(),
   );
-  // Dead on arrival → immediate ephemeral refusal, NO deferred vote post.
+  // Fails the screen → immediate ephemeral refusal, NO deferred vote post.
+  // The wording deliberately no longer says "dead on arrival": this is often a
+  // newcomer's first interaction with the bot and the check is a fallible
+  // keyword scan, so it now explains itself and offers a way to appeal (C-08).
+  // What must NOT change is that it never reaches a vote.
   assert.equal(response.type, InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE);
   assert.equal(deferred, undefined);
-  assert.match(response.data!.content!, /dead on arrival|will not be put to a vote/i);
+  assert.match(response.data!.content!, /didn't pass the automated compliance check|hasn't gone to a vote/i);
 });
 
 test("adapter: an unknown caller is not elevated — treated as @everyone", () => {

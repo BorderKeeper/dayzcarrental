@@ -88,6 +88,7 @@ the repo:
 | `DISCORD_GUILD_ID` | Your server ID (for member-role lookups at tally time) | No |
 | `DISCORD_ROLE_MAP` | JSON mapping server role IDs → governance roles, e.g. `{"<verifiedRoleId>":"verified","<runnerRoleId>":"runner"}` | No |
 | `DISCORD_VOTE_CHANNEL_ID` | *(optional)* channel for public vote posts; defaults to the invoking channel | No |
+| `DISCORD_GOVERNANCE_LOG_CHANNEL_ID` | *(optional)* channel id for `#governance-log`. Set it and every tally and runner-op publishes its audit trail there. Unset, the trail is still produced but goes nowhere — which is what `#governance-log` being empty meant. | No |
 
 > These are read at runtime by `src/app/api/discord/route.ts` and the AI client. `.env*` files are
 > **locked** (`GUARDRAILS.md`) — set them in Vercel's dashboard, not in a committed file.
@@ -104,29 +105,44 @@ the repo:
 
 ---
 
-## 4. Register the `/propose`, `/tally` and `/safehouse` commands [you]
+## 4. Register the slash commands [you]
 
-Registering slash commands is a one-time authenticated call to Discord's API with **your** bot token.
-Do it from your own shell (keep the `-d` JSON on one line to avoid the "invalid JSON" trap). Register
-as a **guild** command (`/applications/$APP_ID/guilds/$GUILD_ID/commands`) for instant availability
-while testing; global commands take ~1h to propagate.
+One command registers all four (`/propose`, `/tally`, `/safehouse`, `/help`). The definitions live
+in `src/lib/governance/commands.ts`, next to the handler that reads them, so the two can't drift.
 
 ```bash
-# /propose
-curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
-  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"propose","description":"Propose a change (goes through the governance guardrails)","options":[{"name":"kind","description":"content-edit, server-add, policy-note, or safehouse-change","type":3,"required":true},{"name":"title","description":"Short title","type":3,"required":true},{"name":"body","description":"What and why","type":3,"required":true}]}'
-
-# /tally
-curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
-  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"tally","description":"Count the votes on a proposal and post the outcome","options":[{"name":"message","description":"The vote message ID to tally","type":3,"required":true},{"name":"channel","description":"Channel ID of the vote message (defaults to here)","type":3,"required":false}]}'
-
-# /safehouse — the runner-ops side channel (no vote needed)
-curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
-  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"safehouse","description":"Add, remove or stage a safehouse on a server you run","options":[{"name":"op","description":"add, remove or stage","type":3,"required":true,"choices":[{"name":"add","value":"add"},{"name":"remove","value":"remove"},{"name":"stage","value":"stage"}]},{"name":"server","description":"Server id (see: fleet.mjs show)","type":3,"required":true},{"name":"name","description":"Safehouse name","type":3,"required":true}]}'
+DISCORD_APP_ID=... DISCORD_GUILD_ID=... DISCORD_BOT_TOKEN=... \
+  node --import ./scripts/ts-loader.mjs scripts/register-commands.mjs
 ```
+
+PowerShell (set the variables first — PowerShell has no inline `VAR=x cmd` form):
+
+```powershell
+$env:DISCORD_APP_ID="..."; $env:DISCORD_GUILD_ID="..."; $env:DISCORD_BOT_TOKEN="..."
+node --import ./scripts/ts-loader.mjs scripts/register-commands.mjs
+```
+
+Registers as **guild** commands, which appear instantly. Add `--global` for global commands
+(~1h to propagate). Re-run it any time the definitions change — Discord upserts by name.
+
+> **Why a script and not `curl` or `Invoke-RestMethod`.** Both hand-rolled routes fail on Windows,
+> for two unrelated reasons, and neither error names its real cause:
+>
+> - **`curl.exe` from PowerShell** → `The request body contains invalid JSON` (code 50109).
+>   PowerShell strips the inner double quotes when passing `-d '{"name":"propose"}'` to a native
+>   exe, so Discord receives `{name:propose}`. The JSON was never wrong; the shell ate it.
+> - **`Invoke-RestMethod`** → `403 Forbidden` on every POST, even though GETs with the same token
+>   succeed. Discord's Cloudflare layer rejects PowerShell's default User-Agent. It looks exactly
+>   like a permissions problem and isn't one — if you're diagnosing a 403 here, check the
+>   User-Agent before you go re-inviting the bot.
+>
+> The script uses Node's `fetch`, which trips neither. Verified end to end: all four commands
+> registered from Windows on the first run.
+
+`kind` on `/propose` is registered as **choices**, not free text — otherwise typing "add server"
+instead of `server-add` fails, and the error can only tell you after the fact. The bot still lists
+the valid kinds if an unknown one reaches it (via an older client, say). Disabled action kinds are
+never offered, since no vote could approve them.
 
 ### Who `/safehouse` lets act
 
