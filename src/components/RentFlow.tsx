@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import type { Vehicle } from "@/data/vehicles";
-import { getSafehouses, mapUrl, formatCoords, type Safehouse } from "@/data/safehouses";
+import { mapUrl, formatCoords, type Safehouse } from "@/data/types";
 
 interface Props {
   vehicle: Vehicle;
-  serverId: string;
+  // Approved pickup points for the chosen server. Passed in rather than looked
+  // up, so this component works the same against live and sandbox data.
+  safehouses: Safehouse[];
   serverName: string;
+  isSandbox: boolean;
   onClose: () => void;
 }
 
@@ -15,9 +18,14 @@ type Step = 1 | 2 | 3 | 4;
 
 // Multi-step rent request. Pure client-side mockup: validates and shows a
 // "request received (demo)" confirmation. Nothing is submitted.
-export default function RentFlow({ vehicle, serverId, serverName, onClose }: Props) {
+export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, onClose }: Props) {
   const [step, setStep] = useState<Step>(1);
-  const safehouses = getSafehouses(serverId);
+
+  // A sandbox server the visitor typed in has no curated safehouses, so pickup
+  // falls back to free text. Without this the demo dead-ends at step 1 with no
+  // radio button to select and a validation error that can never be satisfied.
+  const freeTextPickup = safehouses.length === 0;
+  const [pickupNote, setPickupNote] = useState("");
 
   const [safehouseId, setSafehouseId] = useState("");
   const [days, setDays] = useState("2");
@@ -30,7 +38,9 @@ export default function RentFlow({ vehicle, serverId, serverName, onClose }: Pro
 
   function next() {
     const errs: string[] = [];
-    if (step === 1 && !safehouseId) errs.push("Please choose a pickup safehouse.");
+    if (step === 1 && !freeTextPickup && !safehouseId) errs.push("Please choose a pickup safehouse.");
+    if (step === 1 && freeTextPickup && !pickupNote.trim())
+      errs.push("Tell us roughly where you'd like to pick the car up.");
     if (step === 1) {
       const d = Number(days);
       if (!Number.isFinite(d) || d < 1) errs.push("Enter how many days you want the car (1 or more).");
@@ -85,12 +95,22 @@ export default function RentFlow({ vehicle, serverId, serverName, onClose }: Pro
 
       {step === 1 && (
         <div className="stack">
-          <h3>Choose an approved safehouse for pickup</h3>
-          {safehouses.length === 0 ? (
-            <p className="muted">
-              No approved safehouses are listed for this server yet. Runners curate these in Discord
-              — check back soon or ask in the runner-ops channel.
-            </p>
+          <h3>{freeTextPickup ? "Where would you like to pick it up?" : "Choose an approved safehouse for pickup"}</h3>
+          {freeTextPickup ? (
+            <div>
+              <label htmlFor="pickup-note">Pickup spot</label>
+              <input
+                id="pickup-note"
+                type="text"
+                placeholder="e.g. the green barn north of Novy Sobor"
+                value={pickupNote}
+                onChange={(e) => setPickupNote(e.target.value)}
+              />
+              <div className="field-hint">
+                We don&apos;t have curated safehouses on {serverName} yet, so a runner would agree a
+                spot with you directly.
+              </div>
+            </div>
           ) : (
             <ul className="option-list">
               {safehouses.map((s) => (
@@ -214,8 +234,12 @@ export default function RentFlow({ vehicle, serverId, serverName, onClose }: Pro
       {step === 4 && (
         <div className="stack">
           <div className="notice notice--success">
-            <strong>Request received (demo).</strong> In the live service, a runner would now stage
-            your {vehicle.name} and message you the lock code.
+            <strong>Request received (demo).</strong>{" "}
+            {isSandbox
+              ? `This is the sample version — ${serverName} isn't a real server and nothing was sent.`
+              : "Rental requests aren't wired up yet, so nothing was sent."}{" "}
+            In the live service, a runner would now stage your {vehicle.name} and message you the
+            lock code.
           </div>
           <div className="panel panel--plain">
             <h3>Your (mock) rental request</h3>
@@ -227,15 +251,17 @@ export default function RentFlow({ vehicle, serverId, serverName, onClose }: Pro
                 <strong>Server:</strong> {serverName}
               </li>
               <li>
-                <strong>Pickup:</strong> {chosenSafehouse?.name} ({chosenSafehouse?.area})
-                {chosenSafehouse && (
+                <strong>Pickup:</strong>{" "}
+                {chosenSafehouse ? (
                   <>
-                    {" "}
-                    — coords {formatCoords(chosenSafehouse)} ·{" "}
+                    {chosenSafehouse.name} ({chosenSafehouse.area}) — coords{" "}
+                    {formatCoords(chosenSafehouse)} ·{" "}
                     <a href={mapUrl(chosenSafehouse)} target="_blank" rel="noopener noreferrer">
                       map
                     </a>
                   </>
+                ) : (
+                  pickupNote
                 )}
               </li>
               <li>

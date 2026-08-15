@@ -252,6 +252,18 @@ textarea {
   border-color: var(--accent);
   background: #fdf6d3;
 }
+/* Sandbox banner. Sits above every /sandbox page and is not dismissible — a
+   visitor must never be looking at invented servers with nothing saying so. */
+.notice--sandbox {
+  border-color: #5b7596;
+  border-left-width: 5px;
+  background: #e8eef6;
+}
+.sandbox-switch {
+  white-space: nowrap;
+  font-weight: bold;
+}
+
 /* Real-money warning. Deliberately louder than .notice--demo: the one page
    that can actually charge someone must not look like the mockup pages. */
 .notice--money {

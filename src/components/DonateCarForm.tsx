@@ -1,11 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import ServerSelect from "@/components/ServerSelect";
-import { SERVERS } from "@/data/servers";
+import ServerSelect, { CUSTOM_SERVER } from "@/components/ServerSelect";
+import type { GameServer } from "@/data/types";
 
 // Client-side mockup form: validates and shows a demo confirmation.
-export default function DonateCarForm() {
+//
+// Unlike renting, "Other / not listed" stays available here whatever the server
+// list looks like: a donated car on a server we don't cover yet is still a
+// useful lead — it's often the reason a server becomes covered.
+export default function DonateCarForm({ servers }: { servers: GameServer[] }) {
   const [serverId, setServerId] = useState("");
   const [customServer, setCustomServer] = useState("");
   const [vehicle, setVehicle] = useState("");
@@ -18,9 +22,9 @@ export default function DonateCarForm() {
   const [submitted, setSubmitted] = useState(false);
 
   const serverName =
-    serverId === "__custom"
+    serverId === CUSTOM_SERVER
       ? customServer.trim()
-      : SERVERS.find((s) => s.id === serverId)?.name ?? "";
+      : servers.find((s) => s.id === serverId)?.name ?? "";
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,6 +67,7 @@ export default function DonateCarForm() {
       )}
 
       <ServerSelect
+        servers={servers}
         value={serverId}
         onChange={setServerId}
         customName={customServer}

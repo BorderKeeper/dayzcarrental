@@ -29,7 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href={SITE.discordInvite} target="_blank" rel="noopener noreferrer">
                 Join our Discord
               </a>{" "}
-              &middot; <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
+              &middot; <Link href="/sandbox">Try the sample version</Link> &middot;{" "}
+              <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>
             </p>
             <p className="small">
               This is a non-commercial fan project and is <strong>not affiliated with or
