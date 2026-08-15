@@ -11,6 +11,12 @@
  *   3. Dangerous shell (rm -rf, fork bombs, curl|sh, disk writes...).
  *   4. Unsafe git (push to main/master, force-push, history rewrite).
  *
+ * Scope: the locked-file rules are about THIS repo. A personal Claude config
+ * dir outside the repo (e.g. ~/.claude) is exempt for its *data* subtrees only
+ * — projects/, memory/, todos/, history/ — so a developer's own local agent can
+ * keep its memory. Its settings/hooks/skills/agents/commands stay locked, since
+ * those can grant permissions or run code back inside this repo.
+ *
  * Blocking = print hookSpecificOutput JSON with permissionDecision "deny" (exit 0).
  * Allowing = exit 0 with no output. On any internal error we fail OPEN (exit 0):
  * the settings.json `permissions.deny` list is the hard backstop that does not
@@ -18,6 +24,11 @@
  */
 
 "use strict";
+
+const path = require("path");
+
+// This file lives at <repo>/.claude/hooks/guard.js, so the repo root is two up.
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 function readStdin() {
   try {
@@ -53,10 +64,52 @@ const LOCKED_BASENAMES = new Set([
   "tsconfig.json",
 ]);
 
-// Locked by directory prefix or filename pattern.
-function isLockedPath(p) {
+// ---- personal (non-repo) Claude data -------------------------------------
+// The rules above are about THIS repo. A developer running their own local
+// agent also has a personal Claude config dir (e.g. ~/.claude) that happens to
+// contain the string ".claude", and blocking it was never the intent.
+//
+// We only exempt the *data* subtrees. The rest of a personal .claude
+// (settings*.json, hooks/, skills/, agents/, commands/, plugins/, CLAUDE.md)
+// stays locked on purpose: those can grant permissions or execute code that
+// applies back inside this repo, so writing them is still a guardrail bypass.
+const PERSONAL_DATA_SUBDIRS = new Set([
+  "projects",
+  "memory",
+  "todos",
+  "history",
+  "file-history",
+  "shell-snapshots",
+  "logs",
+]);
+
+function isInsideRepo(abs) {
+  const rel = path.relative(REPO_ROOT, abs);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+// `norm` is a forward-slash path already known to be outside the repo.
+function isPersonalAgentData(norm) {
+  const m = /(^|\/)\.claude\/(.+)$/.exec(norm);
+  if (!m) return false;
+  const rest = m[2];
+  // Refuse to be fooled by a nested .claude further down the path.
+  if (/(^|\/)\.claude(\/|$)/.test(rest)) return false;
+  return PERSONAL_DATA_SUBDIRS.has(rest.split("/")[0]);
+}
+
+// Locked by directory prefix or filename pattern. `cwd` is the hook event's
+// working directory, used to resolve relative paths before scoping.
+function isLockedPath(p, cwd) {
   if (!p) return false;
-  const norm = String(p).replace(/\\/g, "/").trim();
+  let abs;
+  try {
+    abs = path.resolve(cwd || process.cwd(), String(p));
+  } catch (_) {
+    abs = String(p);
+  }
+  const norm = String(abs).replace(/\\/g, "/").trim();
+  if (!isInsideRepo(abs) && isPersonalAgentData(norm)) return false;
   const base = norm.split("/").pop() || "";
   if (LOCKED_BASENAMES.has(base)) return true;
   // .env, .env.local, .env.production, etc.
@@ -85,6 +138,19 @@ const LOCKED_TOKEN_RE = new RegExp(
     ")"
 );
 
+// Absolute (or ~-rooted) paths into a personal Claude data subtree. Redacted
+// from a shell command before the locked-token scan, so writing to something
+// like ~/.claude/projects/foo/memory/bar.md is not read as touching this
+// repo's .claude/. Only anchored paths qualify — a bare relative
+// ".claude/projects/..." is left in place — and any path containing ".."
+// is left in place too, so it cannot be used to climb back into hooks/.
+const PERSONAL_PATH_RE =
+  /(?:~|\$HOME|%USERPROFILE%|[A-Za-z]:)?[\/\\][^\s"'`;|&()]*\.claude[\/\\](?:projects|memory|todos|history|file-history|shell-snapshots|logs)[\/\\][^\s"'`;|&()]*/g;
+
+function stripPersonalAgentData(cmd) {
+  return cmd.replace(PERSONAL_PATH_RE, (m) => (m.indexOf("..") !== -1 ? m : " "));
+}
+
 // ---- main -----------------------------------------------------------------
 let event;
 try {
@@ -104,7 +170,7 @@ const PROPOSE =
 // 1 & 2: direct file edits to locked paths
 if (tool === "Write" || tool === "Edit" || tool === "MultiEdit" || tool === "NotebookEdit") {
   const fp = input.file_path || input.notebook_path;
-  if (isLockedPath(fp)) {
+  if (isLockedPath(fp, event.cwd)) {
     deny("Blocked: editing a locked file (" + fp + ")." + PROPOSE);
   }
   process.exit(0);
@@ -151,7 +217,9 @@ if (tool === "Bash") {
   }
 
   // Shell-based edits to locked files: a locked token AND a mutation verb.
-  if (LOCKED_TOKEN_RE.test(cmd)) {
+  // Personal agent-data paths are redacted first (see PERSONAL_PATH_RE); the
+  // danger/git checks above still ran against the unredacted command.
+  if (LOCKED_TOKEN_RE.test(stripPersonalAgentData(cmd))) {
     const MUTATION = [
       />>?/, // redirect (> or >>)
       /\btee\b/,
