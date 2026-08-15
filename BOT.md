@@ -144,6 +144,38 @@ instead of `server-add` fails, and the error can only tell you after the fact. T
 the valid kinds if an unknown one reaches it (via an older client, say). Disabled action kinds are
 never offered, since no vote could approve them.
 
+### The `#verify` button [you]
+
+`#verify` is the single door into the server, and it told newcomers to *"React with ✅ below"* with
+no ✅ ever seeded — nothing to press.
+
+**Seeding the reaction would not have fixed it.** This bot is a serverless *interactions* webhook;
+Discord delivers message reactions as **Gateway** events, which never reach it. People would have
+clicked and nothing would have happened. A **button** arrives as a `MESSAGE_COMPONENT` interaction,
+which this endpoint does receive — so that's what `#verify` uses.
+
+Before posting it, in **Server Settings → Roles**, the bot needs:
+
+- the **Manage Roles** permission, and
+- its own role **above `@Verified`** in the list.
+
+Discord refuses the grant otherwise with a 403 that never mentions ordering — so the handler says so
+explicitly when it sees one.
+
+```bash
+DISCORD_BOT_TOKEN=... DISCORD_VERIFY_CHANNEL_ID=... DISCORD_RULES_CHANNEL_ID=... \
+  node --import ./scripts/ts-loader.mjs scripts/post-verify.mjs
+```
+
+The channel id is the last segment of its URL: `discord.com/channels/<guild>/<channel>`.
+
+The role granted is whichever role `DISCORD_ROLE_MAP` maps to `verified` — no extra variable, and no
+way for the button to hand out a role the governance engine doesn't count as verified. If nothing is
+mapped, the button says so and blames the config rather than the newcomer.
+
+Then check, in order: the button renders; pressing it from a **non-verified** account grants the
+role; the community channels become visible to that account.
+
 ### Who `/safehouse` lets act
 
 Main-runner authority is **per server**. Holding the `@main-runner` Discord role is necessary but
