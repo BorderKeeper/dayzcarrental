@@ -26,6 +26,9 @@ import { GovernanceEngine } from "./engine";
 import { screenProposal } from "./screen";
 import { DiscordApiClient, VOTE_EMOJI } from "./discordApi";
 import { proposalEmbed, collectAndTally, type RoleMap } from "./voteTally";
+import type { RunnerOps, RunnerActionResult, SafehouseOp } from "./runnerOps";
+
+const VALID_SAFEHOUSE_OPS: SafehouseOp[] = ["add", "remove", "stage"];
 
 // --- Discord protocol constants -------------------------------------------
 export const InteractionType = { PING: 1, APPLICATION_COMMAND: 2, MESSAGE_COMPONENT: 3 } as const;
@@ -77,6 +80,11 @@ export interface AdapterConfig {
   // meaningless, so /tally reports the misconfiguration instead of running and
   // blaming the community for "no quorum".
   roleMapProblems?: string[];
+  // Builds a RunnerOps bound to one server's main-runner assignments, loaded at
+  // request time. Injected so this module does no I/O. `assigned` reports
+  // whether ANYONE leads that server, which is what separates "you're not the
+  // lead" from "nobody is, so this store was never seeded".
+  runnerOpsFor?: (serverId: string, requester: Member) => Promise<{ ops: RunnerOps; assigned: boolean }>;
   // Fired when a /tally resolves to "approved" — the route wires this to the
   // GitHub repository_dispatch that kicks off the AI feature-builder workflow.
   // Returns a short human status line to append to the outcome post. Optional:
@@ -126,8 +134,12 @@ export function handleInteraction(interaction: DiscordInteraction, cfg: AdapterC
         return handlePropose(interaction, cfg);
       case "tally":
         return handleTally(interaction, cfg);
+      case "safehouse":
+        return handleSafehouse(interaction, cfg);
       default:
-        return { response: reply(`Unknown command '${interaction.data?.name ?? ""}'. Try /propose or /tally.`) };
+        return {
+          response: reply(`Unknown command '${interaction.data?.name ?? ""}'. Try /propose, /tally or /safehouse.`),
+        };
     }
   }
   return { response: reply("Unsupported interaction.") };
@@ -291,6 +303,89 @@ function handleTally(interaction: DiscordInteraction, cfg: AdapterConfig): Handl
       }
     },
   };
+}
+
+// /safehouse op:<add|remove|stage> server:<serverId> name:<safehouse name>
+//
+// The runner-ops side channel, finally reachable. RunnerOps has existed and
+// been tested since the engine was written, but nothing ever CONSTRUCTED it
+// outside test files, so per-server authority did nothing: a main runner acting
+// on her own server got back "proposed, awaiting main-runner" — she was waiting
+// on herself, and every routine safehouse change escalated to the founder,
+// which is exactly what this side channel was built to prevent (E-03).
+//
+// Assignments come from the fleet store at request time (injected by the route,
+// so this module stays free of I/O and testable).
+function handleSafehouse(interaction: DiscordInteraction, cfg: AdapterConfig): HandledInteraction {
+  const o = opts(interaction);
+  const op = (o.op ?? "").toLowerCase();
+  const serverId = o.server ?? "";
+  const name = o.name ?? "";
+
+  if (!VALID_SAFEHOUSE_OPS.includes(op as SafehouseOp)) {
+    return { response: reply(`\`op\` must be one of: ${VALID_SAFEHOUSE_OPS.join(", ")}.`) };
+  }
+  if (!serverId || !name) {
+    return { response: reply("Usage: `/safehouse op:<add|remove|stage> server:<server id> name:<safehouse>`.") };
+  }
+  if (!cfg.runnerOpsFor || !cfg.discord) {
+    return { response: reply("Runner-ops isn't configured yet (bot token / fleet store not set).") };
+  }
+
+  const user = interaction.member?.user ?? interaction.user ?? {};
+  const requesterId = user.id ?? "";
+  const member: Member = {
+    id: requesterId,
+    handle: user.username ?? requesterId,
+    roles: callerRoles(interaction, cfg.roleMap),
+    // Age gates the vote flow, not runner-ops: runner roles are granted by a
+    // human after vetting, which is a stronger check than account age.
+    accountAgeDays: Number.MAX_SAFE_INTEGER,
+  };
+
+  return {
+    response: { type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: { flags: EPHEMERAL } },
+    deferred: async () => {
+      try {
+        const { ops, assigned } = await cfg.runnerOpsFor!(serverId, member);
+        const result = ops.submit({ requesterId, serverId, op: op as SafehouseOp, safehouseName: name });
+
+        let note = "";
+        if (result.status === "proposed" && !assigned) {
+          // Distinguish "you aren't the lead here" from "nobody is" — the
+          // second is a store that was never seeded, and without this the
+          // runner has no way to tell which wall they hit.
+          note =
+            `\n\n_No main runner is assigned to \`${serverId}\` yet, so every change there needs the founder. ` +
+            `If that's you, ask them to add you._`;
+        }
+        await editOriginal(cfg.discord!, interaction, formatRunnerResult(result) + note);
+
+        // runnerOps promises changes are "announced + logged". Post applied
+        // changes publicly so the server can see who changed what.
+        if (result.status === "applied" && cfg.discord && cfg.voteChannelId) {
+          await cfg.discord.createMessage(cfg.voteChannelId, { content: `🏠 **Runner-ops** — ${result.detail}` });
+        }
+      } catch (e) {
+        await editOriginal(
+          cfg.discord!,
+          interaction,
+          `Couldn't apply that: ${(e as Error)?.message ?? "unexpected error"}.`,
+        );
+      }
+    },
+  };
+}
+
+function formatRunnerResult(r: RunnerActionResult): string {
+  switch (r.status) {
+    case "applied":
+      return `✅ **Applied.** ${r.detail}. It'll land as a runner-ops change for the founder to merge.`;
+    case "proposed":
+      return `📋 **Proposed.** ${r.detail}. A main runner for this server (or the founder) applies it.`;
+    case "denied":
+      return `🚫 **Denied.** ${r.detail}`;
+  }
 }
 
 async function editOriginal(discord: DiscordApiClient, interaction: DiscordInteraction, content: string): Promise<void> {

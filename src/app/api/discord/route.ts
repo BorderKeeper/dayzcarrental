@@ -21,6 +21,9 @@ import { handleInteraction, type DiscordInteraction } from "@/lib/governance/dis
 import { DiscordApiClient } from "@/lib/governance/discordApi";
 import { dispatchAiBuild } from "@/lib/governance/githubDispatch";
 import { onceStoreFromEnv } from "@/lib/governance/onceStore";
+import { RunnerOps } from "@/lib/governance/runnerOps";
+import { AuditLog } from "@/lib/governance/audit";
+import { loadMainRunnerAssignments } from "@/data/liveStore";
 import { parseRoleMap } from "@/lib/governance/roleMap";
 import type { Member, Proposal } from "@/lib/governance/types";
 
@@ -118,6 +121,19 @@ export async function POST(request: Request) {
     roster,
     roleMapProblems,
     onApproved,
+    // E-03: RunnerOps existed and was tested, but nothing outside test files
+    // ever constructed it, so per-server authority did nothing and a main
+    // runner ended up waiting on her own approval. This is that construction.
+    // Assignments are read per request so a promotion takes effect immediately
+    // rather than after the next cold start.
+    runnerOpsFor: async (serverId, requester) => {
+      const assignments = await loadMainRunnerAssignments([serverId]);
+      const members = new Map<string, Member>([[requester.id, requester]]);
+      return {
+        ops: new RunnerOps(members, assignments, new AuditLog()),
+        assigned: (assignments.get(serverId) ?? []).length > 0,
+      };
+    },
   });
 
   // Run any deferred Discord work AFTER the response is flushed, so we ack

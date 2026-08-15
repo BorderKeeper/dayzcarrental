@@ -19,8 +19,15 @@
 //   {
 //     "servers": [ { "id", "name", "map", "mode" } ],
 //     "safehouses": { "<serverId>": [ { "id","name","area","map","x","y" } ] },
-//     "vehicleIds": { "<serverId>": [ "ada-4x4", "olga-24" ] }
+//     "vehicleIds": { "<serverId>": [ "ada-4x4", "olga-24" ] },
+//     "mainRunners": { "<serverId>": [ "<discord user id>" ] }
 //   }
+//
+// `mainRunners` grants per-server authority: those users can change that
+// server's safehouses via /safehouse without waiting for the founder. Holding
+// the @main-runner Discord role is necessary but NOT sufficient — a runner must
+// also be listed here for the server in question. Leaving a server out means
+// every change on it escalates.
 // `map` on a safehouse must be one of: chernarusplus | livonia | sakhal.
 // `vehicleIds` must match ids in src/data/vehicles.ts — anything else renders
 // as nothing, since the catalogue is filtered by id.
@@ -88,6 +95,20 @@ function validate(doc) {
       if (!catalogue.has(v)) problems.push(`vehicleIds['${sid}'] lists unknown vehicle '${v}'.`);
     }
   }
+
+  for (const [sid, list] of Object.entries(doc.mainRunners ?? {})) {
+    if (!ids.has(sid)) problems.push(`mainRunners['${sid}'] has no matching server.`);
+    if (!Array.isArray(list)) {
+      problems.push(`mainRunners['${sid}'] must be an array.`);
+      continue;
+    }
+    for (const u of list) {
+      // A handle here instead of an id would silently grant nobody anything.
+      if (typeof u !== "string" || !/^\d{5,}$/.test(u)) {
+        problems.push(`mainRunners['${sid}'] entry '${u}' is not a Discord user id (numeric snowflake).`);
+      }
+    }
+  }
   return problems;
 }
 
@@ -100,15 +121,20 @@ async function show() {
     return;
   }
   for (const s of servers) {
-    const [h, v] = await run([
+    const [h, v, m] = await run([
       ["GET", FLEET_KEYS.safehousesFor(s.id)],
       ["GET", FLEET_KEYS.vehiclesFor(s.id)],
+      ["GET", FLEET_KEYS.mainRunnersFor(s.id)],
     ]);
     const houses = h ? JSON.parse(String(h)) : [];
     const cars = v ? JSON.parse(String(v)) : [];
+    const leads = m ? JSON.parse(String(m)) : [];
     console.log(`${s.name}  [${s.id}]  ${s.map} · ${s.mode}`);
     console.log(`   safehouses: ${houses.length ? houses.map((x) => x.name).join(", ") : "(none)"}`);
     console.log(`   staged cars: ${cars.length ? cars.join(", ") : "(none)"}`);
+    console.log(
+      `   main runners: ${leads.length ? leads.join(", ") : "(none — every change here escalates to the founder)"}`,
+    );
   }
 }
 
@@ -129,6 +155,7 @@ async function seed(path) {
   for (const s of doc.servers) {
     commands.push(["SET", FLEET_KEYS.safehousesFor(s.id), JSON.stringify(doc.safehouses?.[s.id] ?? [])]);
     commands.push(["SET", FLEET_KEYS.vehiclesFor(s.id), JSON.stringify(doc.vehicleIds?.[s.id] ?? [])]);
+    commands.push(["SET", FLEET_KEYS.mainRunnersFor(s.id), JSON.stringify(doc.mainRunners?.[s.id] ?? [])]);
   }
   await run(commands);
   console.log(`Seeded ${doc.servers.length} server(s). The live site will pick this up immediately.`);
@@ -141,6 +168,7 @@ async function clear() {
   for (const s of servers) {
     commands.push(["DEL", FLEET_KEYS.safehousesFor(s.id)]);
     commands.push(["DEL", FLEET_KEYS.vehiclesFor(s.id)]);
+    commands.push(["DEL", FLEET_KEYS.mainRunnersFor(s.id)]);
   }
   await run(commands);
   console.log("Cleared the live fleet. The site falls back to its empty state, not to sample data.");

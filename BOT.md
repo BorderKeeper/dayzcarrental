@@ -104,7 +104,7 @@ the repo:
 
 ---
 
-## 4. Register the `/propose` and `/tally` commands [you]
+## 4. Register the `/propose`, `/tally` and `/safehouse` commands [you]
 
 Registering slash commands is a one-time authenticated call to Discord's API with **your** bot token.
 Do it from your own shell (keep the `-d` JSON on one line to avoid the "invalid JSON" trap). Register
@@ -121,7 +121,25 @@ curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/
 curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
   -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"tally","description":"Count the votes on a proposal and post the outcome","options":[{"name":"message","description":"The vote message ID to tally","type":3,"required":true},{"name":"channel","description":"Channel ID of the vote message (defaults to here)","type":3,"required":false}]}'
+
+# /safehouse — the runner-ops side channel (no vote needed)
+curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
+  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"safehouse","description":"Add, remove or stage a safehouse on a server you run","options":[{"name":"op","description":"add, remove or stage","type":3,"required":true,"choices":[{"name":"add","value":"add"},{"name":"remove","value":"remove"},{"name":"stage","value":"stage"}]},{"name":"server","description":"Server id (see: fleet.mjs show)","type":3,"required":true},{"name":"name","description":"Safehouse name","type":3,"required":true}]}'
 ```
+
+### Who `/safehouse` lets act
+
+Main-runner authority is **per server**. Holding the `@main-runner` Discord role is necessary but
+**not sufficient** — the runner must also be listed against that server in the fleet store:
+
+```bash
+node --import ./scripts/ts-loader.mjs scripts/fleet.mjs show   # prints main runners per server
+```
+
+Set them via the `mainRunners` block in your seed document (see `scripts/fleet.mjs`). A server with
+nobody assigned still works — every change there is recorded as a proposal and escalates to you —
+and `/safehouse` says so explicitly, so a runner can tell "I'm not the lead here" from "nobody is".
 
 ---
 
