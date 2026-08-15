@@ -33,10 +33,12 @@ export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, o
   const [contactType, setContactType] = useState<"discord" | "email">("discord");
   const [contact, setContact] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const [recorded, setRecorded] = useState(false);
 
   const chosenSafehouse: Safehouse | undefined = safehouses.find((s) => s.id === safehouseId);
 
-  function next() {
+  async function next() {
     const errs: string[] = [];
     if (step === 1 && !freeTextPickup && !safehouseId) errs.push("Please choose a pickup safehouse.");
     if (step === 1 && freeTextPickup && !pickupNote.trim())
@@ -52,7 +54,45 @@ export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, o
         errs.push("That doesn't look like a valid email address.");
     }
     setErrors(errs);
-    if (errs.length === 0) setStep((s) => Math.min(4, (s + 1) as Step) as Step);
+    if (errs.length > 0) return;
+
+    // Step 3 is where someone hands over a contact handle — the highest-intent
+    // moment in the funnel, and it used to be dropped on the floor (F-08).
+    // Sandbox is exempt: it's a demo against invented servers, and recording
+    // interest in a server that doesn't exist would poison the real list.
+    if (step === 3 && !isSandbox) {
+      setSending(true);
+      const res = await submitInterest();
+      setSending(false);
+      if (!res.ok) {
+        setErrors([res.detail]);
+        return;
+      }
+      setRecorded(true);
+    }
+    setStep((s) => Math.min(4, (s + 1) as Step) as Step);
+  }
+
+  async function submitInterest(): Promise<{ ok: true } | { ok: false; detail: string }> {
+    const pickup = chosenSafehouse ? `${chosenSafehouse.name} (${chosenSafehouse.area})` : pickupNote;
+    try {
+      const res = await fetch("/api/intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "rental-interest",
+          contactType,
+          contact: contact.trim(),
+          serverName,
+          detail: `Wants the ${vehicle.name} for ${days} day(s). Pickup: ${pickup}.`,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) return { ok: true };
+      return { ok: false, detail: data?.detail ?? "We couldn't record that just now. Try again, or say hello in Discord." };
+    } catch {
+      return { ok: false, detail: "We couldn't reach the server. Try again, or say hello in Discord." };
+    }
   }
 
   function back() {
@@ -193,8 +233,9 @@ export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, o
         <div className="stack">
           <h3>How should we reach you?</h3>
           <p className="small muted">
-            We&apos;ll let you know when payment is confirmed and when your vehicle is staged and
-            ready at the safehouse.
+            {isSandbox
+              ? "This is the sample version — nothing you type here is sent or stored."
+              : "We keep this and the details above so a runner can reach you about this rental. Only the crew sees it, it's never published, and it isn't used for anything else."}
           </p>
           <div className="row">
             <label style={{ fontWeight: "normal", margin: 0 }}>
@@ -234,12 +275,23 @@ export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, o
       {step === 4 && (
         <div className="stack">
           <div className="notice notice--success">
-            <strong>Request received (demo).</strong>{" "}
-            {isSandbox
-              ? `This is the sample version — ${serverName} isn't a real server and nothing was sent.`
-              : "Rental requests aren't wired up yet, so nothing was sent."}{" "}
-            In the live service, a runner would now stage your {vehicle.name} and message you the
-            lock code.
+            {isSandbox ? (
+              <>
+                <strong>Request received (demo).</strong> This is the sample version —{" "}
+                {serverName} isn&apos;t a real server and nothing was sent.
+              </>
+            ) : recorded ? (
+              <>
+                <strong>Got it — you&apos;re on the list.</strong> We&apos;ve recorded your details
+                and a runner will get in touch. Renting isn&apos;t automated yet, so this is a real
+                person reading a real list, not an instant booking.
+              </>
+            ) : (
+              <>
+                <strong>Request noted.</strong> We couldn&apos;t record it just now — the quickest
+                route is to say hello in Discord.
+              </>
+            )}
           </div>
           <div className="panel panel--plain">
             <h3>Your (mock) rental request</h3>
@@ -279,7 +331,7 @@ export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, o
             </ul>
           </div>
           <p className="small muted">
-            Nothing was actually sent or charged — this is a mockup to gauge demand.
+            No money changed hands and nothing was charged — rentals are paid in-game, to a runner.
           </p>
           <button className="btn" onClick={onClose}>
             Back to listings
@@ -294,8 +346,8 @@ export default function RentFlow({ vehicle, safehouses, serverName, isSandbox, o
               &laquo; Back
             </button>
           )}
-          <button className="btn" onClick={next}>
-            {step === 3 ? "Submit request" : "Continue »"}
+          <button className="btn" onClick={next} disabled={sending}>
+            {sending ? "Sending…" : step === 3 ? "Submit request" : "Continue »"}
           </button>
         </div>
       )}

@@ -22,6 +22,7 @@ export const SITE = {
 export const NAV = [
   { href: "/", label: "Rent a Car" },
   { href: "/donate-a-car", label: "Donate a Car" },
+  { href: "/list-your-server", label: "List Your Server" },
   { href: "/maintainer", label: "Become a Maintainer" },
   { href: "/runner", label: "Become a Runner" },
   { href: "/governance", label: "How Governance Works" },

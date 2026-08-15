@@ -22,7 +22,7 @@ export default async function SandboxDonateCarPage() {
       </div>
       <div className="panel">
         <h2>Car details</h2>
-        <DonateCarForm servers={fleet.servers} />
+        <DonateCarForm servers={fleet.servers} isSandbox />
       </div>
     </div>
   );

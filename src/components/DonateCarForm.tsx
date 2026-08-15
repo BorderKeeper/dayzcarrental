@@ -9,7 +9,7 @@ import type { GameServer } from "@/data/types";
 // Unlike renting, "Other / not listed" stays available here whatever the server
 // list looks like: a donated car on a server we don't cover yet is still a
 // useful lead — it's often the reason a server becomes covered.
-export default function DonateCarForm({ servers }: { servers: GameServer[] }) {
+export default function DonateCarForm({ servers, isSandbox = false }: { servers: GameServer[]; isSandbox?: boolean }) {
   const [serverId, setServerId] = useState("");
   const [customServer, setCustomServer] = useState("");
   const [vehicle, setVehicle] = useState("");
@@ -20,13 +20,15 @@ export default function DonateCarForm({ servers }: { servers: GameServer[] }) {
   const [contact, setContact] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [recorded, setRecorded] = useState(false);
 
   const serverName =
     serverId === CUSTOM_SERVER
       ? customServer.trim()
       : servers.find((s) => s.id === serverId)?.name ?? "";
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const errs: string[] = [];
     if (!serverName) errs.push("Pick or type the server the car is on.");
@@ -34,18 +36,73 @@ export default function DonateCarForm({ servers }: { servers: GameServer[] }) {
     if (!location.trim()) errs.push("Describe where the car is located.");
     if (!contact.trim()) errs.push("Leave an email or Discord handle so a runner can coordinate.");
     setErrors(errs);
-    if (errs.length === 0) setSubmitted(true);
+    if (errs.length > 0) return;
+
+    // Sandbox is a demo against invented servers; recording a car on one would
+    // send a runner looking for something that doesn't exist.
+    if (isSandbox) {
+      setSubmitted(true);
+      return;
+    }
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "car-donation",
+          contactType: contact.includes("@") ? "email" : "discord",
+          contact: contact.trim(),
+          serverName,
+          detail: [
+            `Car: ${vehicle.trim()}`,
+            `Where: ${location.trim()}`,
+            howToRun.trim() && `To run it: ${howToRun.trim()}`,
+            barter.trim() && `Barter wanted: ${barter.trim()}`,
+            notes.trim() && `Notes: ${notes.trim()}`,
+          ]
+            .filter(Boolean)
+            .join(" — "),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) setRecorded(true);
+      else {
+        setErrors([data?.detail ?? "We couldn't record that just now. Try again, or ask in Discord."]);
+        return;
+      }
+    } catch {
+      setErrors(["We couldn't reach the server. Try again, or ask in Discord."]);
+      return;
+    } finally {
+      setSending(false);
+    }
+    setSubmitted(true);
   }
 
   if (submitted) {
     return (
       <div className="stack">
         <div className="notice notice--success">
-          <strong>Thanks — donation logged (demo).</strong> In the live service a runner would
-          contact you to arrange pickup of the {vehicle} on {serverName} and sort out any barter.
+          {isSandbox ? (
+            <>
+              <strong>Thanks — donation logged (demo).</strong> {serverName} isn&apos;t a real
+              server, so nothing was sent.
+            </>
+          ) : recorded ? (
+            <>
+              <strong>Thanks — we&apos;ve got it.</strong> A runner will contact you to arrange
+              pickup of the {vehicle} on {serverName} and sort out any barter.
+            </>
+          ) : (
+            <>
+              <strong>Noted.</strong> We couldn&apos;t record it just now — the quickest route is to
+              say hello in Discord.
+            </>
+          )}
         </div>
-        <p className="small muted">Nothing was actually submitted — this is a mockup.</p>
-        <button className="btn" onClick={() => setSubmitted(false)}>
+        <button className="btn" onClick={() => { setSubmitted(false); setRecorded(false); }}>
           Donate another car
         </button>
       </div>
