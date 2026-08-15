@@ -116,7 +116,7 @@ while testing; global commands take ~1h to propagate.
 # /propose
 curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
   -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"propose","description":"Propose a change (goes through the governance guardrails)","options":[{"name":"kind","description":"content-edit, server-add, policy-note, or safehouse-change","type":3,"required":true},{"name":"title","description":"Short title","type":3,"required":true},{"name":"body","description":"What and why","type":3,"required":true}]}'
+  -d '{"name":"propose","description":"Propose a change (goes through the governance guardrails)","options":[{"name":"kind","description":"What kind of change","type":3,"required":true,"choices":[{"name":"content-edit","value":"content-edit"},{"name":"server-add","value":"server-add"},{"name":"safehouse-change","value":"safehouse-change"},{"name":"policy-note","value":"policy-note"}]},{"name":"title","description":"Short title","type":3,"required":true},{"name":"body","description":"What and why","type":3,"required":true}]}'
 
 # /tally
 curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
@@ -127,7 +127,16 @@ curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/
 curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
   -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"safehouse","description":"Add, remove or stage a safehouse on a server you run","options":[{"name":"op","description":"add, remove or stage","type":3,"required":true,"choices":[{"name":"add","value":"add"},{"name":"remove","value":"remove"},{"name":"stage","value":"stage"}]},{"name":"server","description":"Server id (see: fleet.mjs show)","type":3,"required":true},{"name":"name","description":"Safehouse name","type":3,"required":true}]}'
+
+# /help — how to propose, vote and tally. Without it none of the above is discoverable.
+curl -X POST "https://discord.com/api/v10/applications/$APP_ID/guilds/$GUILD_ID/commands" \
+  -H "Authorization: Bot $BOT_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"help","description":"How proposals, votes and runner-ops work"}'
 ```
+
+`kind` on `/propose` is registered as **choices**, not free text — otherwise typing "add server"
+instead of `server-add` fails, and the error can only tell you after the fact. The bot still lists
+the valid kinds if an unknown one reaches it (via an older client, say).
 
 ### Who `/safehouse` lets act
 

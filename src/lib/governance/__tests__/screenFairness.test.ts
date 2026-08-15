@@ -169,6 +169,43 @@ test("C-08: a rejection says it's automated, fallible, and where to go", () => {
 });
 
 // ---------------------------------------------------------------------------
+// F-03 / F-04 — the mechanism is discoverable and its errors are actionable
+// ---------------------------------------------------------------------------
+test("F-03: an unknown action kind lists the valid ones", () => {
+  const res = screenProposal(proposal("Please add my server.", "Add server", "add server"));
+  assert.equal(res.ok, false);
+  const detail = res.reasons.find((r) => r.code === "unknown-action")!.detail;
+  assert.match(detail, /server-add/, "must name the kind the user meant");
+  assert.match(detail, /content-edit/);
+  // Disabled kinds are not offered as options — suggesting them would send
+  // someone down a path that can never pass.
+  assert.doesNotMatch(detail, /real-money-rental|treasury-spend|deploy/);
+});
+
+test("F-04: /help explains the commands and stays in sync with the catalogue", () => {
+  const { response } = handleInteraction(
+    { type: InteractionType.APPLICATION_COMMAND, data: { name: "help" }, member: { user: { id: "u1" } } },
+    { roster: new Map<string, Member>(), nowMs: 1 },
+  );
+  const c = response.data!.content!;
+  for (const cmd of ["/propose", "/tally", "/safehouse"]) {
+    assert.ok(c.includes(cmd), `/help must mention ${cmd}`);
+  }
+  assert.match(c, /server-add/, "kinds come from ACTION_CATALOG so they can't drift");
+  assert.doesNotMatch(c, /treasury-spend/, "disabled kinds aren't advertised as proposable");
+  // E-02's lesson, surfaced where a confused voter will actually read it.
+  assert.match(c, /misconfiguration, not apathy/);
+});
+
+test("F-04: an unknown command points at the help instead of a bare error", () => {
+  const { response } = handleInteraction(
+    { type: InteractionType.APPLICATION_COMMAND, data: { name: "wat" }, member: { user: { id: "u1" } } },
+    { roster: new Map<string, Member>(), nowMs: 1 },
+  );
+  assert.match(response.data!.content!, /\/propose/);
+});
+
+// ---------------------------------------------------------------------------
 // E-06 — the audit trail reaches #governance-log instead of being discarded
 // ---------------------------------------------------------------------------
 test("E-06: a tally publishes its audit trail to the governance log", async () => {

@@ -25,6 +25,7 @@ import type { AuditEntry, Member, Proposal, Role } from "./types";
 import type { AuditLog } from "./audit";
 import { GovernanceEngine } from "./engine";
 import { screenProposal } from "./screen";
+import { ACTION_CATALOG } from "./config";
 import { DiscordApiClient, VOTE_EMOJI } from "./discordApi";
 import { proposalEmbed, collectAndTally, type RoleMap } from "./voteTally";
 import type { RunnerOps, RunnerActionResult, SafehouseOp } from "./runnerOps";
@@ -143,9 +144,13 @@ export function handleInteraction(interaction: DiscordInteraction, cfg: AdapterC
         return handleTally(interaction, cfg);
       case "safehouse":
         return handleSafehouse(interaction, cfg);
+      case "help":
+        return { response: reply(helpText()) };
       default:
         return {
-          response: reply(`Unknown command '${interaction.data?.name ?? ""}'. Try /propose, /tally or /safehouse.`),
+          response: reply(
+            `Unknown command '${interaction.data?.name ?? ""}'.\n\n${helpText()}`,
+          ),
         };
     }
   }
@@ -393,6 +398,33 @@ function handleSafehouse(interaction: DiscordInteraction, cfg: AdapterConfig): H
       }
     },
   };
+}
+
+// F-04: without this, the entire community-input mechanism was invisible unless
+// somebody happened to tell you it existed. Built from ACTION_CATALOG so the
+// list of proposable kinds can't drift from what the engine actually accepts.
+function helpText(): string {
+  const kinds = ACTION_CATALOG.filter((a) => a.enabled).map((a) => `\`${a.kind}\``).join(", ");
+  return [
+    "**How to get something changed here**",
+    "",
+    "`/propose kind:<type> title:<short title> body:<what and why>`",
+    `  Opens a proposal for the community to vote on. Kinds: ${kinds}.`,
+    "  It's screened against the compliance rules first — that check is automated and",
+    "  can be wrong, so if it misreads you, reword it or ask a mod.",
+    "",
+    "`/tally message:<vote message id>`",
+    "  Counts the ✅/❌/🤷 reactions and posts the outcome. Only the person who",
+    "  opened the proposal, or a mod, can run it.",
+    "",
+    "`/safehouse op:<add|remove|stage> server:<server id> name:<safehouse>`",
+    "  Routine runner work — no vote needed. If you're the main runner for that",
+    "  server it applies straight away; otherwise it's recorded for one to approve.",
+    "",
+    "Votes need a quorum of eligible voters, and eligibility means @Verified plus a",
+    "minimum account age. If a tally says nobody voted but you know people did, say",
+    "so — that's usually a misconfiguration, not apathy.",
+  ].join("\n");
 }
 
 function formatRunnerResult(r: RunnerActionResult): string {

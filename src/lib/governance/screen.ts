@@ -16,7 +16,7 @@
 // the community layer so it never reaches a vote. The hook is still the backstop.
 
 import type { Proposal, ScreenResult, ScreenReason } from "./types";
-import { findAction } from "./config";
+import { findAction, ACTION_CATALOG } from "./config";
 
 // ---- prompt-injection heuristics ------------------------------------------
 // These match the CLAUDE.md examples of untrusted input trying to act like a
@@ -191,7 +191,13 @@ export function screenProposal(p: Proposal): ScreenResult {
   //    kinds that stay off until Phase 3/4 (never enabled by a vote).
   const action = findAction(p.actionKind);
   if (!action) {
-    reasons.push({ code: "unknown-action", detail: `Unknown action kind '${p.actionKind}'.` });
+    // F-03: the error used to name the bad value and stop, leaving someone who
+    // typed "add server" instead of "server-add" with nothing to go on.
+    const usable = ACTION_CATALOG.filter((a) => a.enabled).map((a) => a.kind);
+    reasons.push({
+      code: "unknown-action",
+      detail: `Unknown action kind '${p.actionKind}'. Valid kinds are: ${usable.join(", ")}.`,
+    });
   } else if (!action.enabled) {
     reasons.push({
       code: "disabled-action",
