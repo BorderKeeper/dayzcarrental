@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Side profile illustration of a short upright hatchback">
+  <!-- Olga 24 — two-box hatchback. Read at card size: SHORT and TALL, with the
+       roof running all the way back over the rear wheel and dropping almost
+       vertically. No boot at all — that's what separates it from the Sarka.
+       Original artwork. -->
+  <g fill="none" stroke="#14243a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M66 106 L66 84 Q66 78 73 77 L102 74
+             L116 46 Q119 42 126 42 L226 42 Q234 42 236 49
+             L244 92 Q245 100 238 100 L238 106 Z" fill="#2f6fb3" />
+    <!-- near-vertical tailgate: the hatchback tell -->
+    <path d="M236 49 L244 92" stroke-width="3.5" />
+    <path d="M124 72 L136 48 L162 48 L162 72 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M170 72 L170 48 L222 48 L228 72 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M166 74 L166 100" stroke-width="2" />
+    <path d="M178 82 L190 82" stroke-width="3" />
+    <path d="M70 84 L84 84" stroke="#c8a415" stroke-width="4.5" />
+    <path d="M242 84 L232 84" stroke="#a11" stroke-width="4.5" />
+  </g>
+  <g stroke="#14243a" stroke-width="3.5">
+    <circle cx="112" cy="106" r="18" fill="#14243a" />
+    <circle cx="112" cy="106" r="7.5" fill="#9db4cf" />
+    <circle cx="212" cy="106" r="18" fill="#14243a" />
+    <circle cx="212" cy="106" r="7.5" fill="#9db4cf" />
+  </g>
+  <path d="M20 126 L300 126" stroke="#6f8db3" stroke-width="3" stroke-linecap="round" opacity="0.6" />
+</svg>

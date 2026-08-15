@@ -311,6 +311,13 @@ textarea {
   object-fit: cover;
   display: block;
 }
+/* Line-art illustrations, not photos: contain rather than cover, or the
+   drawing gets cropped at the wheels. */
+.vcard__img--art img {
+  object-fit: contain;
+  padding: 4px 8px;
+  background: transparent;
+}
 .vcard__body {
   padding: 10px 12px;
   flex: 1;

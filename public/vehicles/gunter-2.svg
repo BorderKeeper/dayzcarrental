@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Side profile illustration of a low, long sport hatchback">
+  <!-- Gunter 2 — sport hatchback. Read at card size: LOW and LONG, with a
+       steeply raked screen and a roof tapering into a fastback tail. Sits
+       between the upright Olga and the boot-backed Sarka. Original artwork. -->
+  <g fill="none" stroke="#14243a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M24 106 L24 92 Q24 86 31 85 L72 82
+             L106 62 Q111 58 118 58 L198 58 Q206 58 209 63
+             L272 90 Q280 93 280 99 L280 106 Z" fill="#2f6fb3" />
+    <!-- the fastback line itself, drawn over the fill so it reads at 40px tall -->
+    <path d="M209 63 L272 90" stroke-width="3.5" />
+    <path d="M116 80 L136 64 L160 64 L160 80 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M168 80 L168 64 L196 64 L216 80 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M164 82 L164 102" stroke-width="2" />
+    <path d="M176 88 L188 88" stroke-width="3" />
+    <path d="M50 95 L250 93" stroke-width="2" opacity="0.5" />
+    <path d="M28 92 L42 92" stroke="#c8a415" stroke-width="4.5" />
+    <path d="M278 98 L266 98" stroke="#a11" stroke-width="4.5" />
+  </g>
+  <g stroke="#14243a" stroke-width="3.5">
+    <circle cx="82" cy="106" r="19" fill="#14243a" />
+    <circle cx="82" cy="106" r="8.5" fill="#9db4cf" />
+    <circle cx="234" cy="106" r="19" fill="#14243a" />
+    <circle cx="234" cy="106" r="8.5" fill="#9db4cf" />
+  </g>
+  <path d="M16 126 L304 126" stroke="#6f8db3" stroke-width="3" stroke-linecap="round" opacity="0.6" />
+</svg>

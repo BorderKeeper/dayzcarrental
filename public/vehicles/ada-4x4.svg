@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Side profile illustration of a short, tall offroad four-by-four">
+  <!-- Ada 4x4 — the read at card size is STUBBY and HIGH: short overhangs, a
+       tall body, oversized wheels, and daylight under the sills. Drawn shorter
+       than every other car here on purpose; the first attempt was as long as
+       the estate silhouettes and looked like one. Original artwork. -->
+  <g fill="none" stroke="#14243a" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- body sits high: bottom edge above the wheel centres -->
+    <path d="M72 86 L72 62 Q72 56 79 55 L96 53
+             L104 38 Q107 34 114 34 L232 34 Q239 34 241 40
+             L246 54 Q252 55 252 61 L252 86 Z" fill="#2f6fb3" />
+    <path d="M112 52 L120 40 L148 40 L148 52 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M156 52 L156 40 L228 40 L232 52 Z" fill="#dde7f2" stroke-width="2.5" />
+    <path d="M152 54 L152 82" stroke-width="2" />
+    <path d="M164 62 L176 62" stroke-width="3" />
+    <!-- roof rack -->
+    <path d="M110 34 L234 34" stroke-width="5" />
+    <path d="M118 30 L118 34 M226 30 L226 34" stroke-width="3" />
+    <path d="M74 62 L88 62" stroke="#c8a415" stroke-width="4.5" />
+    <path d="M250 64 L240 64" stroke="#a11" stroke-width="4.5" />
+  </g>
+  <!-- big wheels, hanging well below the body -->
+  <g stroke="#14243a" stroke-width="3.5">
+    <circle cx="106" cy="98" r="24" fill="#14243a" />
+    <circle cx="106" cy="98" r="10" fill="#9db4cf" />
+    <circle cx="220" cy="98" r="24" fill="#14243a" />
+    <circle cx="220" cy="98" r="10" fill="#9db4cf" />
+  </g>
+  <path d="M40 126 L280 126" stroke="#6f8db3" stroke-width="3" stroke-linecap="round" opacity="0.6" />
+</svg>

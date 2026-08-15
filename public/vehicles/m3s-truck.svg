@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Side profile illustration of a heavy cab-over cargo truck">
+  <!-- M3S — cab-over heavy truck with a flat cargo bed. Original artwork.
+       Deliberately the tallest and longest silhouette of the five: the card is
+       small, so the shape has to carry "this is the big one" on its own. -->
+  <g fill="none" stroke="#14243a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <!-- cab, forward of the front axle -->
+    <path d="M22 96 L22 44 Q22 38 29 38 L88 38 Q95 38 95 45 L95 96 Z" fill="#2f6fb3" />
+    <path d="M30 62 L30 44 L86 44 L86 62 Z" fill="#dde7f2" stroke-width="2.5" />
+    <!-- chassis rail -->
+    <path d="M95 88 L296 88 L296 96 L95 96 Z" fill="#14243a" />
+    <!-- cargo bed with stake sides -->
+    <path d="M104 88 L104 54 L288 54 L288 88 Z" fill="#2f6fb3" />
+    <g stroke-width="2.5" opacity="0.75">
+      <path d="M132 56 L132 86" />
+      <path d="M168 56 L168 86" />
+      <path d="M204 56 L204 86" />
+      <path d="M240 56 L240 86" />
+    </g>
+    <path d="M24 46 L24 58" stroke="#c8a415" stroke-width="5" />
+    <path d="M294 60 L294 72" stroke="#a11" stroke-width="5" />
+  </g>
+  <!-- one front axle, twin rear: the classic heavy-truck read -->
+  <g stroke="#14243a" stroke-width="3">
+    <circle cx="58" cy="102" r="21" fill="#14243a" />
+    <circle cx="58" cy="102" r="8.5" fill="#9db4cf" />
+    <circle cx="212" cy="102" r="21" fill="#14243a" />
+    <circle cx="212" cy="102" r="8.5" fill="#9db4cf" />
+    <circle cx="258" cy="102" r="21" fill="#14243a" />
+    <circle cx="258" cy="102" r="8.5" fill="#9db4cf" />
+  </g>
+  <path d="M14 128 L306 128" stroke="#6f8db3" stroke-width="3" stroke-linecap="round" opacity="0.6" />
+</svg>
