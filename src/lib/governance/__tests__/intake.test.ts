@@ -13,7 +13,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { recordIntake, validateIntake, intakeKey, LIMITS, INTAKE_KINDS } from "../../../data/intake";
+import {
+  recordIntake,
+  readIntake,
+  removeIntake,
+  validateIntake,
+  intakeKey,
+  LIMITS,
+  INTAKE_KINDS,
+} from "../../../data/intake";
 
 // A fake Redis that records commands and answers INCR from a counter.
 function fakeRedis() {
@@ -181,4 +189,72 @@ test("intake: each kind lands in its own list", async () => {
   await recordIntake({ ...valid, kind: "car-donation" }, "b", { url: "redis://x", run });
   const keys = commands.filter((c) => c[0] === "RPUSH").map((c) => c[1]);
   assert.deepEqual(keys, [intakeKey("server-request"), intakeKey("car-donation")]);
+});
+
+// ---------------------------------------------------------------------------
+// READING — the pins promise "a runner will get in touch", which is only true
+// if the crew can see the list. Reachable from scripts/intake.mjs only.
+// ---------------------------------------------------------------------------
+function fakeList(rows: string[]) {
+  const store = [...rows];
+  const run = async (cmds: (string | number)[][]) =>
+    cmds.map((c) => {
+      if (c[0] === "LRANGE") return [...store];
+      if (c[0] === "LREM") {
+        const i = store.indexOf(String(c[3]));
+        if (i === -1) return 0;
+        store.splice(i, 1);
+        return 1;
+      }
+      return "OK";
+    });
+  return { run, store };
+}
+
+test("intake: entries read back oldest first — that's the order to work them", async () => {
+  const a = { ...valid, contact: "first", receivedAt: "2026-08-01T00:00:00.000Z" };
+  const b = { ...valid, contact: "second", receivedAt: "2026-08-02T00:00:00.000Z" };
+  const { run } = fakeList([JSON.stringify(a), JSON.stringify(b)]);
+
+  const got = await readIntake("rental-interest", { url: "redis://x", run });
+  assert.deepEqual(got.map((e) => e.contact), ["first", "second"]);
+});
+
+test("intake: one unreadable row doesn't hide the rest", async () => {
+  const good = JSON.stringify({ ...valid, contact: "readable" });
+  const { run } = fakeList(["{not json", good]);
+  const got = await readIntake("rental-interest", { url: "redis://x", run });
+  assert.equal(got.length, 1);
+  assert.equal(got[0].contact, "readable");
+});
+
+test("intake: with no store configured, reading yields nothing rather than throwing", async () => {
+  assert.deepEqual(await readIntake("rental-interest", { url: null }), []);
+});
+
+test("intake: a handled entry can be removed, and only that one", async () => {
+  const a = { ...valid, contact: "alice" };
+  const b = { ...valid, contact: "bob" };
+  const { run, store } = fakeList([JSON.stringify(a), JSON.stringify(b)]);
+
+  assert.equal(await removeIntake("rental-interest", a, { url: "redis://x", run }), true);
+  const left = await readIntake("rental-interest", { url: "redis://x", run });
+  assert.deepEqual(left.map((e) => e.contact), ["bob"]);
+  assert.equal(store.length, 1);
+});
+
+test("intake: removing two identical submissions takes one at a time", async () => {
+  // LREM count 1, deliberately: handling one reply shouldn't silently discard
+  // a second person who happened to submit the same thing.
+  const dupe = { ...valid, contact: "same" };
+  const row = JSON.stringify(dupe);
+  const { run } = fakeList([row, row]);
+
+  await removeIntake("rental-interest", dupe, { url: "redis://x", run });
+  assert.equal((await readIntake("rental-interest", { url: "redis://x", run })).length, 1);
+});
+
+test("intake: removing something already gone reports false, not success", async () => {
+  const { run } = fakeList([]);
+  assert.equal(await removeIntake("rental-interest", valid as never, { url: "redis://x", run }), false);
 });

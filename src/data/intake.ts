@@ -111,6 +111,50 @@ export function validateIntake(input: Partial<IntakeEntry>): { ok: true; entry: 
   };
 }
 
+// Read a kind's entries, oldest first (the order they arrived, which is the
+// order to work them).
+//
+// There is no HTTP route for this and there must not be: a public list of
+// people who want to rent, with their handles, is a gift to anyone scraping.
+// It is reachable only from scripts/intake.mjs, which needs REDIS_URL.
+export async function readIntake(kind: IntakeKind, deps: IntakeDeps = {}): Promise<IntakeEntry[]> {
+  const run = resolveRun(deps);
+  if (!run) return [];
+  try {
+    const [raw] = await run([["LRANGE", intakeKey(kind), 0, -1]]);
+    const rows = Array.isArray(raw) ? raw : [];
+    return rows
+      .map((r) => {
+        try {
+          return JSON.parse(String(r)) as IntakeEntry;
+        } catch {
+          // One unreadable row must not hide every other lead.
+          return null;
+        }
+      })
+      .filter((e): e is IntakeEntry => e !== null);
+  } catch (e) {
+    console.error("[intake] could not read:", (e as Error).message);
+    return [];
+  }
+}
+
+// Remove one entry once it's been dealt with, so the list is a work queue
+// rather than an ever-growing pile. Matched by exact stored value — LREM with
+// count 1 removes a single occurrence, so two identical submissions from the
+// same person don't both vanish when you handle one.
+export async function removeIntake(kind: IntakeKind, entry: IntakeEntry, deps: IntakeDeps = {}): Promise<boolean> {
+  const run = resolveRun(deps);
+  if (!run) return false;
+  try {
+    const [removed] = await run([["LREM", intakeKey(kind), 1, JSON.stringify(entry)]]);
+    return Number.parseInt(String(removed ?? "0"), 10) > 0;
+  } catch (e) {
+    console.error("[intake] could not remove:", (e as Error).message);
+    return false;
+  }
+}
+
 // Record an entry. `fingerprint` is a coarse per-submitter key used only to
 // rate-limit; it is never stored with the entry.
 export async function recordIntake(
