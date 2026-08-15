@@ -29,7 +29,18 @@ const INJECTION_PATTERNS: { re: RegExp; detail: string }[] = [
   { re: /(the\s+)?founder\s+(already\s+)?(approved|authorized|said\s+ok|signed\s+off)/i, detail: "false claim of founder approval" },
   { re: /edit\s+(the\s+)?(COMPLIANCE|CLAUDE|GUARDRAILS)\.md/i, detail: "asks to edit a locked guardrail file" },
   { re: /(disable|bypass|turn\s+off|remove)\s+(the\s+)?(hook|guardrail|guard\.js|permission|deny)/i, detail: "asks to disable a guardrail" },
-  { re: /\.claude\/|\.env\b|package-lock\.json|secret|token|credential|api[_-]?key/i, detail: "references locked/secret files or credentials" },
+  // `token` used to appear here bare, which made "my server has a token
+  // economy for fuel" an injection attempt — and flagged "AI tokens", a phrase
+  // this project's own docs use. Scoped to credential contexts: a token is only
+  // suspicious when it's an API/bot/auth token or an env-var name.
+  {
+    re: /\.claude\/|\.env\b|package-lock\.json|\bsecrets?\b|\bcredentials?\b|\bapi[_\s-]?keys?\b|\b(api|bot|auth|access|refresh|bearer|discord|github|personal[_\s-]?access)[_\s-]?tokens?\b/i,
+    detail: "references locked/secret files or credentials",
+  },
+  // Case-SENSITIVE on purpose: SCREAMING_SNAKE names an env var, which is a
+  // credential; "token" in prose is not. Kept separate so the pattern above can
+  // stay case-insensitive.
+  { re: /\b[A-Z][A-Z0-9]*(_[A-Z0-9]+)*_(TOKEN|KEY|SECRET)\b/, detail: "references a credential environment variable" },
   { re: /(push|merge)\s+(directly\s+)?to\s+(main|master)/i, detail: "asks to bypass the branch → PR → founder-merge flow" },
   { re: /force[-\s]?push|filter-branch|reset\s+--hard/i, detail: "asks for unsafe git history rewrite" },
 ];
@@ -39,35 +50,118 @@ const INJECTION_PATTERNS: { re: RegExp; detail: string }[] = [
 // (ammo/food/fuel) is the ALLOWED model, so we look for fiat + rental context.
 const FIAT = /(\$|€|£|usd|eur|gbp|dollars?|euros?|real[-\s]?money|cash|stripe|credit\s?card|debit\s?card|checkout|"?buy\s+now"?)/i;
 const RENTAL_CTX = /(rent|rental|renting|hire|lease|per[-\s]?day\s+price|price\s+to\s+rent)/i;
-const PAYOUT_CTX = /(pay(out|ing)?|wage|salar|compensat|reward\s+in\s+cash|paid\s+in\s+(cash|money))\s*(runners?|maintainers?|players?|volunteers?)?/i;
+// A recipient is REQUIRED. The trailing group used to be optional, so a bare
+// "pay" matched — meaning "pay $20 to rent a car" was reported as a real-money
+// PAYOUT to runners as well as a real-money rental. The rental verdict was
+// right; the payout one was a mislabel that would have confused anyone reading
+// the rejection.
+const WHO_PAID = /(runners?|maintainers?|players?|volunteers?|staff|mods?|moderators?|contributors?)/;
+const PAYOUT_CTX = new RegExp(
+  `((pay(out|ing|s)?|wage|salar|compensat|reward)\\b[^.]{0,40}\\b${WHO_PAID.source}` +
+    `|${WHO_PAID.source}\\b[^.]{0,40}\\b(get\\s+paid|are\\s+paid|paid\\s+in\\s+(cash|money)|payouts?|wages?|salar))`,
+  "i",
+);
 const GATED_DONATION = /(donat\w*|paypal)[^.]{0,60}(required|mandatory|to\s+(unlock|rent|access|get|reserve)|gates?|in\s+order\s+to)/i;
 const GATE_VIA_DONATION = /(unlock|rent|access|reserve|priority|advantage|better\s+car)[^.]{0,60}(donat\w*|paypal)/i;
 const DISCLAIMER_REMOVAL = /(remove|delete|drop|hide|take\s+down|get\s+rid\s+of)[^.]{0,60}(disclaimer|not\s+affiliated|bohemia)/i;
 
+// ---- asserted vs negated ---------------------------------------------------
+// The screen used to match anywhere in the whole proposal, which meant the most
+// COMPLIANT sentence a server owner could write was rejected as its opposite:
+//
+//   "we want rentals on our server, no real money, in-game barter only"
+//     → "proposing real-money pricing"
+//   "we are not affiliated with Bohemia, please do not remove the disclaimer"
+//     → "disclaimer removal"
+//   "Renting is free — no dollars involved, ever"
+//     → "real-money rental"
+//
+// Their first interaction with the bot accused them of bad faith. So a rule now
+// only trips when the offending thing is being ASSERTED, not denied.
+//
+// Two changes make that work:
+//   1. matching is per sentence, so a money word in one sentence and a rental
+//      word in another no longer combine into an accusation;
+//   2. a match is ignored when a negation cue sits just before it.
+//
+// This deliberately trades a little sensitivity for far fewer false positives,
+// and that trade is safe HERE specifically because this screen is not the last
+// line of defence — the PreToolUse hook blocks the underlying edit whatever a
+// vote decides, and the founder merges every PR by hand. Someone determined
+// could phrase around it; they still could not land the change.
+
+// Sentence-ish boundaries. Commas are deliberately NOT boundaries: "rent a car,
+// pay $20" must stay a single unit or the check becomes trivially evadable.
+const SENTENCE_SPLIT = /[.!?;\n]|—|--/;
+
+// The lookahead matters: "not affiliated" is the disclaimer's own NAME, not a
+// negation. Without it, "hide the not affiliated notice" reads as a denial and
+// a real removal request walks straight through.
+const NEGATION = /\b(no|not|never|non|without|zero|free\s+of|free\s+from|don'?t|doesn'?t|isn'?t|aren'?t|won'?t|nothing|rather\s+than|instead\s+of)\b(?!\s+affiliated)[^.!?;]{0,24}$/i;
+
+// A negation cue anywhere at all — used to test INSIDE a match.
+const NEGATION_ANY = /\b(no|not|never|non|without|zero|free\s+of|free\s+from|don'?t|doesn'?t|isn'?t|aren'?t|won'?t|nothing)\b(?!\s+affiliated)/i;
+
+// Is this match being denied rather than asserted? Two places to look:
+//
+//   before it — "please do not [remove the disclaimer]"
+//   inside it — "[Donations are never required to rent]", where the pattern
+//               spans subject and predicate so the cue lands in the middle.
+//
+// Missing the second case is what kept rejecting "donations are never required
+// to rent a car" as gating gameplay behind a donation.
+function isNegated(sentence: string, index: number, matched: string): boolean {
+  if (NEGATION.test(sentence.slice(Math.max(0, index - 40), index))) return true;
+  return NEGATION_ANY.test(matched);
+}
+
+// Does `re` match this sentence in a way that ASSERTS it? True when at least
+// one occurrence is not negated.
+function assertsMatch(sentence: string, re: RegExp): boolean {
+  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  for (const m of sentence.matchAll(g)) {
+    if (m.index !== undefined && !isNegated(sentence, m.index, m[0])) return true;
+  }
+  return false;
+}
+
+function sentences(text: string): string[] {
+  return text
+    .split(SENTENCE_SPLIT)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function scanCompliance(text: string): ScreenReason[] {
   const reasons: ScreenReason[] = [];
-  if (FIAT.test(text) && RENTAL_CTX.test(text)) {
+  const parts = sentences(text);
+
+  const anySentence = (test: (s: string) => boolean) => parts.some(test);
+
+  // Real money + renting, both asserted in the SAME sentence.
+  if (anySentence((s) => assertsMatch(s, FIAT) && RENTAL_CTX.test(s))) {
     reasons.push({
       code: "compliance-real-money-rental",
       detail:
         "Proposes real-money pricing/checkout for renting a car. COMPLIANCE.md: rentals are in-game commodity only.",
     });
   }
-  if (FIAT.test(text) && PAYOUT_CTX.test(text)) {
+  if (anySentence((s) => assertsMatch(s, FIAT) && PAYOUT_CTX.test(s))) {
     reasons.push({
       code: "compliance-real-money-payout",
       detail:
         "Proposes real-money payouts to runners/maintainers/players. COMPLIANCE.md rule 4 prohibits this in-phase.",
     });
   }
-  if (GATED_DONATION.test(text) || GATE_VIA_DONATION.test(text)) {
+  if (anySentence((s) => assertsMatch(s, GATED_DONATION) || assertsMatch(s, GATE_VIA_DONATION))) {
     reasons.push({
       code: "compliance-gated-donation",
       detail:
         "Ties a donation to renting/unlocking/advantage. COMPLIANCE.md: donations must never gate gameplay.",
     });
   }
-  if (DISCLAIMER_REMOVAL.test(text)) {
+  // "please do NOT remove the disclaimer" is the opposite of a removal request.
+  if (anySentence((s) => assertsMatch(s, DISCLAIMER_REMOVAL))) {
     reasons.push({
       code: "compliance-disclaimer-removal",
       detail:

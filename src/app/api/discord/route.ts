@@ -57,6 +57,9 @@ export async function POST(request: Request) {
   const guildId = process.env.DISCORD_GUILD_ID;
   const { map: roleMap, problems: roleMapProblems } = parseRoleMap(process.env.DISCORD_ROLE_MAP);
   const voteChannelId = process.env.DISCORD_VOTE_CHANNEL_ID;
+  // #governance-log. Absent → the audit trail is still produced, just not
+  // published, which is the behaviour before E-06 was addressed.
+  const governanceLogChannelId = process.env.DISCORD_GOVERNANCE_LOG_CHANNEL_ID;
   const discord = token ? new DiscordApiClient({ token }) : undefined;
 
   // Fail LOUDLY. Only log once the bot is otherwise wired — before that, an
@@ -120,6 +123,7 @@ export async function POST(request: Request) {
     nowMs: Date.now(),
     roster,
     roleMapProblems,
+    governanceLogChannelId,
     onApproved,
     // E-03: RunnerOps existed and was tested, but nothing outside test files
     // ever constructed it, so per-server authority did nothing and a main
@@ -129,9 +133,11 @@ export async function POST(request: Request) {
     runnerOpsFor: async (serverId, requester) => {
       const assignments = await loadMainRunnerAssignments([serverId]);
       const members = new Map<string, Member>([[requester.id, requester]]);
+      const audit = new AuditLog();
       return {
-        ops: new RunnerOps(members, assignments, new AuditLog()),
+        ops: new RunnerOps(members, assignments, audit),
         assigned: (assignments.get(serverId) ?? []).length > 0,
+        audit,
       };
     },
   });

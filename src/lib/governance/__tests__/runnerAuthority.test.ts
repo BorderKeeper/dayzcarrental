@@ -123,10 +123,14 @@ function safehouseCfg(assignments: Map<string, string[]>, sent: string[]) {
     voteChannelId: "c1",
     nowMs: 1_700_000_000_000,
     roster: new Map<string, Member>(),
-    runnerOpsFor: async (serverId: string, requester: Member) => ({
-      ops: new RunnerOps(new Map([[requester.id, requester]]), assignments, new AuditLog()),
-      assigned: (assignments.get(serverId) ?? []).length > 0,
-    }),
+    runnerOpsFor: async (serverId: string, requester: Member) => {
+      const audit = new AuditLog();
+      return {
+        ops: new RunnerOps(new Map([[requester.id, requester]]), assignments, audit),
+        assigned: (assignments.get(serverId) ?? []).length > 0,
+        audit,
+      };
+    },
   };
 }
 

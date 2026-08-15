@@ -21,7 +21,8 @@
 // Discord's 3s ack window, handlers return an immediate `response` plus an
 // optional `deferred` thunk the route runs after flushing the ack.
 
-import type { Member, Proposal, Role } from "./types";
+import type { AuditEntry, Member, Proposal, Role } from "./types";
+import type { AuditLog } from "./audit";
 import { GovernanceEngine } from "./engine";
 import { screenProposal } from "./screen";
 import { DiscordApiClient, VOTE_EMOJI } from "./discordApi";
@@ -80,11 +81,17 @@ export interface AdapterConfig {
   // meaningless, so /tally reports the misconfiguration instead of running and
   // blaming the community for "no quorum".
   roleMapProblems?: string[];
+  // Where the audit trail goes (#governance-log). Absent → entries are still
+  // produced, just not published, which is the pre-existing behaviour.
+  governanceLogChannelId?: string;
   // Builds a RunnerOps bound to one server's main-runner assignments, loaded at
   // request time. Injected so this module does no I/O. `assigned` reports
   // whether ANYONE leads that server, which is what separates "you're not the
   // lead" from "nobody is, so this store was never seeded".
-  runnerOpsFor?: (serverId: string, requester: Member) => Promise<{ ops: RunnerOps; assigned: boolean }>;
+  runnerOpsFor?: (
+    serverId: string,
+    requester: Member,
+  ) => Promise<{ ops: RunnerOps; assigned: boolean; audit: AuditLog }>;
   // Fired when a /tally resolves to "approved" — the route wires this to the
   // GitHub repository_dispatch that kicks off the AI feature-builder workflow.
   // Returns a short human status line to append to the outcome post. Optional:
@@ -162,10 +169,17 @@ function handlePropose(interaction: DiscordInteraction, cfg: AdapterConfig): Han
   // it gets an ephemeral refusal only the proposer sees.
   const screen = screenProposal(proposal);
   if (!screen.ok) {
-    const why = screen.reasons.map((r) => r.detail).join(" | ");
+    const why = screen.reasons.map((r) => `> ${r.detail}`).join("\n");
+    // This is often someone's FIRST interaction with the bot, and the check is
+    // a keyword screen that can be wrong. Say what tripped, say it's automated,
+    // and give them somewhere to go — the old wording just told a well-meaning
+    // newcomer they were "dead on arrival" and left them there.
     return {
       response: reply(
-        `**Proposal rejected — dead on arrival.**\nIt conflicts with COMPLIANCE.md or is unsafe, so it will not be put to a vote:\n> ${why}`,
+        `**That proposal didn't pass the automated compliance check**, so it hasn't gone to a vote yet.\n` +
+          `${why}\n\n` +
+          `This is a keyword check, and it does get things wrong. If it's misread you, ` +
+          `reword the proposal and try again, or ask a mod in **#contributor-hub** and they'll sort it out.`,
       ),
     };
   }
@@ -288,6 +302,7 @@ function handleTally(interaction: DiscordInteraction, cfg: AdapterConfig): Handl
         await discord.createMessage(channelId, {
           content: `🗳️ **Vote result — ${result.proposal.title}**\n${result.outcomeSummary}${buildLine}`,
         });
+        await postAudit(discord, cfg.governanceLogChannelId, `Audit — ${result.proposal.title}`, result.audit);
         await editOriginal(discord, interaction, `Tallied. Decision: **${result.decision}**. Posted the result in the channel.`);
       } catch (e) {
         // Nothing above may throw past this point. A deferred handler that
@@ -347,7 +362,7 @@ function handleSafehouse(interaction: DiscordInteraction, cfg: AdapterConfig): H
     response: { type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: { flags: EPHEMERAL } },
     deferred: async () => {
       try {
-        const { ops, assigned } = await cfg.runnerOpsFor!(serverId, member);
+        const { ops, assigned, audit } = await cfg.runnerOpsFor!(serverId, member);
         const result = ops.submit({ requesterId, serverId, op: op as SafehouseOp, safehouseName: name });
 
         let note = "";
@@ -366,6 +381,9 @@ function handleSafehouse(interaction: DiscordInteraction, cfg: AdapterConfig): H
         if (result.status === "applied" && cfg.discord && cfg.voteChannelId) {
           await cfg.discord.createMessage(cfg.voteChannelId, { content: `🏠 **Runner-ops** — ${result.detail}` });
         }
+        // Runner-ops decisions belong in the same trail as governance ones —
+        // "who changed which safehouse" is exactly what GOVERNANCE.md promises.
+        await postAudit(cfg.discord!, cfg.governanceLogChannelId, `Runner-ops — ${serverId}`, audit.all());
       } catch (e) {
         await editOriginal(
           cfg.discord!,
@@ -385,6 +403,38 @@ function formatRunnerResult(r: RunnerActionResult): string {
       return `📋 **Proposed.** ${r.detail}. A main runner for this server (or the founder) applies it.`;
     case "denied":
       return `🚫 **Denied.** ${r.detail}`;
+  }
+}
+
+// Publish an audit trail to #governance-log.
+//
+// The engine has always written these entries; nothing ever read them, and they
+// died with the engine instance. GOVERNANCE.md promises the community can see
+// "proposal → tally → founder action" after the fact, and #governance-log was
+// fed by nothing (E-06). This is the feed.
+//
+// Best-effort by design: the decision has already been posted publicly and is
+// the real record, so a logging failure must never turn a successful tally into
+// an error the caller sees.
+async function postAudit(
+  discord: DiscordApiClient,
+  channelId: string | undefined,
+  heading: string,
+  entries: AuditEntry[],
+): Promise<void> {
+  if (!channelId || entries.length === 0) return;
+  const lines = entries.map((e) => {
+    const who = e.actorId ? ` · by ${e.actorId}` : "";
+    return `\`${String(e.seq).padStart(2, "0")}\` **${e.event}** — ${e.detail}${who}`;
+  });
+  // Discord hard-caps a message at 2000 chars; trim from the middle rather than
+  // dropping the outcome, which is the entry people actually look for.
+  let body = lines.join("\n");
+  if (body.length > 1800) body = lines.slice(0, 3).join("\n") + "\n…\n" + lines.slice(-3).join("\n");
+  try {
+    await discord.createMessage(channelId, { content: `📓 **${heading}**\n${body}` });
+  } catch {
+    /* the public outcome post is the real record; logging is additive */
   }
 }
 

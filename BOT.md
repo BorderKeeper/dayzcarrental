@@ -88,6 +88,7 @@ the repo:
 | `DISCORD_GUILD_ID` | Your server ID (for member-role lookups at tally time) | No |
 | `DISCORD_ROLE_MAP` | JSON mapping server role IDs → governance roles, e.g. `{"<verifiedRoleId>":"verified","<runnerRoleId>":"runner"}` | No |
 | `DISCORD_VOTE_CHANNEL_ID` | *(optional)* channel for public vote posts; defaults to the invoking channel | No |
+| `DISCORD_GOVERNANCE_LOG_CHANNEL_ID` | *(optional)* channel id for `#governance-log`. Set it and every tally and runner-op publishes its audit trail there. Unset, the trail is still produced but goes nowhere — which is what `#governance-log` being empty meant. | No |
 
 > These are read at runtime by `src/app/api/discord/route.ts` and the AI client. `.env*` files are
 > **locked** (`GUARDRAILS.md`) — set them in Vercel's dashboard, not in a committed file.
